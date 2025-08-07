@@ -218,14 +218,23 @@ if st.session_state.transactions:
     # Charts
     # ----------------------------
     st.subheader("📊 Monthly TFSA Activity")
-    this_month = monthly.iloc[-1] if not monthly.empty else None
-    if this_month is not None:
-        col_dep, col_with, col_warn = st.columns([2, 2, 3])
-        with col_dep:
-            used_pct = int((this_month['deposit'] / total_contribution_room) * 100)
-        st.metric("💰 Deposits", f"${this_month['deposit']:,.2f}", f"{used_pct}% of limit")
-        with col_with:
-            st.metric("🔻 Withdrawals", f"${this_month['withdrawal']:,.2f}")
+    total_deposits = monthly["deposit"].sum()
+    total_withdrawals = monthly["withdrawal"].sum()
+    contribution_percent = min(100, int((total_deposits / total_contribution_room) * 100))
+
+    col_dep, col_with, col_warn = st.columns([2, 2, 3])
+    with col_dep:
+        st.metric("💰 Deposits", f"${total_deposits:,.2f}", f"{contribution_percent}% of limit")
+    with col_with:
+        st.metric("🔻 Withdrawals", f"${total_withdrawals:,.2f}")
+    with col_warn:
+        limit_msg = (
+            f"⚠️ Over-contribution! Your limit is ${total_contribution_room:,.2f}"
+            if total_deposits > total_contribution_room
+            else f"✅ Within your contribution limit of ${total_contribution_room:,.2f}"
+        )
+        color = 'red' if total_deposits > total_contribution_room else 'green'
+        st.markdown(f"<div style='font-size:16px; color:{color}; font-weight:bold;'>{limit_msg}</div>", unsafe_allow_html=True)
         with col_warn:
             st.markdown(f"<div style='font-size:16px; color:{'red' if this_month['deposit'] > total_contribution_room else 'green'}; font-weight:bold;'>"
                         f"{'⚠️ Over-contribution! Your limit is $' + format(total_contribution_room, ',.2f') if this_month['deposit'] > total_contribution_room else '✅ Within your contribution limit of $' + format(total_contribution_room, ',.2f')}"
