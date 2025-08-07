@@ -33,7 +33,32 @@ if ever_contributed == "No":
     for year in range(tfsa_start_year, current_year + 1):
         estimated_room += limits_by_year.get(year, 0)
     st.success(f"✅ Your estimated available contribution room is: ${estimated_room:,.2f}")
-    st.caption("This estimate is based on your date of birth, assuming you've never contributed to a TFSA. It adds together the CRA annual contribution limits starting from the year you turned 18.")
+    with st.expander("ℹ️ Why is this your estimated room?"):
+        st.markdown("""
+        This estimate is based on your date of birth and assumes you've **never contributed** to a TFSA.
+        
+        Contribution room is calculated by adding together the annual TFSA limits from the year you turned 18 until the current year:
+        
+        - 2009: $5,000  
+        - 2010: $5,000  
+        - 2011: $5,000  
+        - 2012: $5,000  
+        - 2013: $5,500  
+        - 2014: $5,500  
+        - 2015: $10,000  
+        - 2016: $5,500  
+        - 2017: $5,500  
+        - 2018: $5,500  
+        - 2019: $6,000  
+        - 2020: $6,000  
+        - 2021: $6,000  
+        - 2022: $6,000  
+        - 2023: $6,500  
+        - 2024: $7,000  
+        - 2025: $7,000  
+
+        If you’ve made any contributions in previous years, your actual room may be less. Withdrawals create new room, but **only in the following calendar year**.
+        """)
 else:
     estimated_room = st.number_input("Enter your unused TFSA room (manually, if known):", min_value=0, step=500, value=0)
 
@@ -110,10 +135,25 @@ if st.session_state.transactions:
     # Charts
     # ----------------------------
     st.subheader("📊 Deposits & Withdrawals by Month")
-    st.bar_chart(monthly.set_index("month")[["deposit", "withdrawal"]])
+st.bar_chart(monthly.set_index("month")[["deposit", "withdrawal"]])
 
-    st.subheader("🪙 Contribution Room Left Over Time")
-    st.line_chart(monthly.set_index("month")["room_left"])
+st.subheader("🪙 Contribution Room Left Over Time (Current Year)")
+st.line_chart(monthly.set_index("month")["room_left"])
+
+# Optional: Full contribution room over time (all years)
+df_all = df.copy()
+all_months = df_all.groupby(["month", "type"])["amount"].sum().unstack().fillna(0).reset_index()
+if 'deposit' not in all_months.columns:
+    all_months['deposit'] = 0.0
+if 'withdrawal' not in all_months.columns:
+    all_months['withdrawal'] = 0.0
+
+all_months["net_contribution"] = all_months["deposit"]
+all_months["cumulative_contribution"] = all_months["deposit"].cumsum()
+all_months["room_left"] = total_contribution_room - all_months["cumulative_contribution"]
+
+st.subheader("📈 Total Contribution Room Left Over Time (All Transactions)")
+st.line_chart(all_months.set_index("month")["room_left"])
 
 else:
     st.info("No transactions logged yet. Use the form above to begin tracking.")
