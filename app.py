@@ -235,10 +235,6 @@ if st.session_state.transactions:
         )
         color = 'red' if total_deposits > total_contribution_room else 'green'
         st.markdown(f"<div style='font-size:16px; color:{color}; font-weight:bold;'>{limit_msg}</div>", unsafe_allow_html=True)
-        with col_warn:
-            st.markdown(f"<div style='font-size:16px; color:{'red' if this_month['deposit'] > total_contribution_room else 'green'}; font-weight:bold;'>"
-                        f"{'⚠️ Over-contribution! Your limit is $' + format(total_contribution_room, ',.2f') if this_month['deposit'] > total_contribution_room else '✅ Within your contribution limit of $' + format(total_contribution_room, ',.2f')}"
-                        f"</div>", unsafe_allow_html=True)
 
     if monthly["month"].nunique() > 1:
         st.subheader("🪙 Contribution Room Left Over Time (Current Year)")
@@ -269,7 +265,3 @@ if st.session_state.transactions:
     remaining_room_val = total_contribution_room - total_deposits
     remaining_color = '#2e7d32' if contribution_percent < 90 else '#d32f2f'
     st.markdown(f"<div style='color:{remaining_color}; font-weight:bold; font-size:16px;'>💡 You have ${remaining_room_val:,.2f} in room remaining.</div>", unsafe_allow_html=True)
-
-
-
-
