@@ -77,7 +77,14 @@ with st.form("transaction_form"):
     submitted = st.form_submit_button("Add Transaction")
 
     if submitted and t_amount > 0:
-        st.session_state.transactions.append({
+        # Calculate used room so far
+        used_room = sum(t['amount'] for t in st.session_state.transactions if t['type'] == 'deposit')
+        remaining_room = total_contribution_room - used_room
+
+        if t_type == 'deposit' and t_amount > remaining_room:
+            st.error(f"❌ You cannot deposit more than your available contribution room (${remaining_room:,.2f}). Reduce the amount or check your entries.")
+        else:
+            st.session_state.transactions.append({
             "date": t_date.strftime("%Y-%m-%d"),
             "type": t_type,
             "amount": t_amount
@@ -154,8 +161,5 @@ if st.session_state.transactions:
 
     st.subheader("📈 Total Contribution Room Left Over Time (All Transactions)")
     st.line_chart(all_months.set_index("month")["room_left"])
-
-
-
 
 
