@@ -60,7 +60,12 @@ if st.session_state.transactions:
     df_current = df[df["year"] == current_year]
 
     # Monthly totals
-    monthly = df_current.groupby(["month", "type"])["amount"].sum().unstack(fill_value=0).reset_index()
+    monthly = df_current.groupby(["month", "type"])["amount"].sum().unstack().fillna(0).reset_index()
+    if 'deposit' not in monthly.columns:
+        monthly['deposit'] = 0.0
+    if 'withdrawal' not in monthly.columns:
+        monthly['withdrawal'] = 0.0
+
     monthly["net_contribution"] = monthly["deposit"] - monthly["withdrawal"]
     monthly["cumulative_contribution"] = monthly["net_contribution"].cumsum()
     monthly["room_left"] = total_contribution_room - monthly["cumulative_contribution"]
