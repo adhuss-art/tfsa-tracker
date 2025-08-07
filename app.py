@@ -41,7 +41,7 @@ if ever_contributed == "No":
         estimated_room += limits_by_year.get(year, 0)
     st.success(f"✅ Your estimated available contribution room is: ${estimated_room:,.2f}")
     with st.expander("ℹ️ Why is this your estimated room?"):
-    st.markdown("""
+        st.markdown("""
         This estimate is based on your date of birth and assumes you've **never contributed** to a TFSA.
         
         Contribution room is calculated by adding together the annual TFSA limits from the year you turned 18 until the current year:
