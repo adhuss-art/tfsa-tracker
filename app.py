@@ -220,7 +220,7 @@ if st.session_state.transactions:
     # Charts
     # ----------------------------
     st.subheader("📊 Monthly TFSA Activity")
-    this_month = monthly_chart.iloc[-1] if not monthly_chart.empty else None
+    this_month = monthly.iloc[-1] if not monthly.empty else None
     if this_month is not None:
         col_dep, col_with, col_warn = st.columns([2, 2, 3])
         with col_dep:
@@ -262,11 +262,6 @@ if st.session_state.transactions:
     remaining_room_val = total_contribution_room - total_deposits
     remaining_color = '#2e7d32' if contribution_percent < 90 else '#d32f2f'
     st.markdown(f"<div style='color:{remaining_color}; font-weight:bold; font-size:16px;'>💡 You have ${remaining_room_val:,.2f} in room remaining.</div>", unsafe_allow_html=True)
-
-
-
-
-
 
 
 
