@@ -18,7 +18,14 @@ st.title("TFSA Monthly Tracker with Carryover Support")
 # TFSA Room Estimator
 # ----------------------------
 st.subheader("📅 Contribution Room Estimator")
-dob = st.date_input("Enter your date of birth:", value=datetime(1990, 1, 1))
+dob = st.date_input("Enter your date of birth:", value=datetime(1990, 1, 1), min_value=datetime(1900, 1, 1), max_value=datetime.today())
+
+# Show year turned 18
+age_18_year = dob.year + 18
+if age_18_year > current_year:
+    st.error("❌ You are not eligible for a TFSA yet. You must be at least 18 years old.")
+else:
+    st.info(f"You became TFSA-eligible in: {age_18_year}")
 ever_contributed = st.radio("Have you ever contributed to a TFSA before?", ["Yes", "No"])
 
 tfsa_start_year = max(dob.year + 18, 2009)
@@ -61,6 +68,28 @@ if ever_contributed == "No":
         """)
 else:
     estimated_room = st.number_input("Enter your unused TFSA room (manually, if known):", min_value=0, step=500, value=0)
+
+# Future contribution room preview
+if ever_contributed == "No" and age_18_year <= current_year:
+    future_years = list(range(current_year + 1, 2027))
+    future_room = sum(limits_by_year.get(year, 0) for year in future_years)
+    if future_room > 0:
+        with st.expander("📅 Estimated Future Contribution Room"):
+            st.markdown("""
+            Here's what your TFSA room could grow to in the coming years:
+            """)
+            for year in future_years:
+                if year in limits_by_year:
+                    st.markdown(f"- {year}: ${limits_by_year[year]:,}")
+            st.markdown(f"**Total (2026): ${future_room:,}**")
+
+        with st.expander("📊 Visual TFSA Growth Timeline"):
+            tfsa_growth = pd.DataFrame({
+                "Year": [year for year in future_years if year in limits_by_year],
+                "Limit": [limits_by_year[year] for year in future_years if year in limits_by_year]
+            })
+            tfsa_growth = tfsa_growth.set_index("Year")
+            st.bar_chart(tfsa_growth)
 
 # ----------------------------
 # Log a New Transaction
