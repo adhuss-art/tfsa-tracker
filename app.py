@@ -219,17 +219,19 @@ if st.session_state.transactions:
     # ----------------------------
     # Charts
     # ----------------------------
-    st.subheader("📊 Deposits & Withdrawals by Month")
-    st.caption("This chart shows your monthly activity. If deposits exceed your contribution room, we cap the visual to stay compliant with CRA rules.")
-
-    # Clip deposits to total contribution room to prevent misleading visuals
-    monthly_chart = monthly.copy()
-    monthly_chart["clipped_deposit"] = monthly_chart["deposit"].clip(upper=total_contribution_room)
-
-    if monthly["deposit"].sum() > total_contribution_room:
-        st.markdown("<span style='color:orange;'>⚠️ Your deposits exceed your legal TFSA contribution room. To avoid CRA penalties, consider withdrawing the excess before year-end.</span>", unsafe_allow_html=True)
-
-    st.bar_chart(monthly_chart.set_index("month")[["clipped_deposit", "withdrawal"]].rename(columns={"clipped_deposit": "deposit"}))
+    st.subheader("📊 Monthly TFSA Activity")
+    this_month = monthly_chart.iloc[-1] if not monthly_chart.empty else None
+    if this_month is not None:
+        col_dep, col_with, col_warn = st.columns([2, 2, 3])
+        with col_dep:
+            st.metric("💰 Deposits", f"${this_month['deposit']:,.2f}")
+        with col_with:
+            st.metric("🔻 Withdrawals", f"${this_month['withdrawal']:,.2f}")
+        with col_warn:
+            if this_month['deposit'] > total_contribution_room:
+                st.markdown("<span style='color:red;'>⚠️ Over-contributed this month</span>", unsafe_allow_html=True)
+            else:
+                st.markdown("<span style='color:green;'>✅ Within contribution limit</span>", unsafe_allow_html=True)
 
     if monthly["month"].nunique() > 1:
         st.subheader("🪙 Contribution Room Left Over Time (Current Year)")
@@ -260,6 +262,11 @@ if st.session_state.transactions:
     remaining_room_val = total_contribution_room - total_deposits
     remaining_color = '#2e7d32' if contribution_percent < 90 else '#d32f2f'
     st.markdown(f"<div style='color:{remaining_color}; font-weight:bold; font-size:16px;'>💡 You have ${remaining_room_val:,.2f} in room remaining.</div>", unsafe_allow_html=True)
+
+
+
+
+
 
 
 
