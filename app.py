@@ -85,10 +85,20 @@ with st.form("transaction_form"):
             st.error(f"❌ You cannot deposit more than your available contribution room (${remaining_room:,.2f}). Reduce the amount or check your entries.")
         else:
             st.session_state.transactions.append({
-            "date": t_date.strftime("%Y-%m-%d"),
-            "type": t_type,
-            "amount": t_amount
-        })
+                "date": t_date.strftime("%Y-%m-%d"),
+                "type": t_type,
+                "amount": t_amount
+            })
+
+            if len(st.session_state.transactions) == 1 and t_type == "deposit":
+                st.success("💸💸💸 Congrats! You’ve just made your first deposit!")
+            else:
+                with st.spinner("Logging transaction..."):
+                    if t_type == "deposit":
+                        st.toast("💸 Deposit added!", icon="💸")
+                    elif t_type == "withdrawal" and t_amount <= remaining_room:
+                        st.toast("🔻 Withdrawal added!", icon="🔻")
+                        st.markdown("<span style='color:red;'>🔻 Withdrawal recorded</span>", unsafe_allow_html=True)
 
         if len(st.session_state.transactions) == 1 and t_type == "deposit":
             st.success("💸💸💸 Congrats! You’ve just made your first deposit!")
@@ -166,6 +176,9 @@ if st.session_state.transactions:
 
     st.subheader("📈 Total Contribution Room Left Over Time (All Transactions)")
     st.line_chart(all_months.set_index("month")["room_left"])
+
+
+
 
 
 
