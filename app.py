@@ -146,20 +146,28 @@ if st.session_state.transactions:
         st.toast("All transactions cleared!", icon="💣")
 
 # ----------------------------
-# Delete Specific Transaction
+# Display Live Transaction Log with delete buttons
 # ----------------------------
 if st.session_state.transactions:
-    st.subheader("🗑️ Manage Transactions")
-    df_manage = pd.DataFrame(st.session_state.transactions).sort_values(by="date")
-    selected_index = st.selectbox(
-        "Select a transaction to delete:",
-        options=range(len(df_manage)),
-        format_func=lambda i: f"{df_manage.iloc[i]['date']} - {df_manage.iloc[i]['type']} - ${df_manage.iloc[i]['amount']:,.2f}"
-    )
-    if st.button("Delete Selected Transaction"):
-        deleted = df_manage.iloc[selected_index]
-        st.session_state.transactions.remove(deleted.to_dict())
-        st.toast(f"Deleted transaction from {deleted['date']}: {deleted['type']} of ${deleted['amount']:,.2f}", icon="🗑️")
+    st.subheader("🧾 Logged Transactions")
+    df_log = pd.DataFrame(st.session_state.transactions)
+    df_log_sorted = df_log.sort_values(by="date").reset_index(drop=True)
+
+    for i, row in df_log_sorted.iterrows():
+        col1, col2, col3, col4 = st.columns([4, 2, 2, 1])
+        with col1:
+            st.markdown(f"**{row['date']}**")
+        with col2:
+            color = 'green' if row['type'] == 'deposit' else 'red'
+            st.markdown(f"<span style='color:{color};'>{row['type'].capitalize()}</span>", unsafe_allow_html=True)
+        with col3:
+            color = 'green' if row['type'] == 'deposit' else 'red'
+            st.markdown(f"<span style='color:{color};'>${row['amount']:,.2f}</span>", unsafe_allow_html=True)
+        with col4:
+            if st.button("❌", key=f"delete_{i}"):
+                st.session_state.transactions.remove(row.to_dict())
+                st.toast(f"Deleted {row['type']} of ${row['amount']:,.2f} from {row['date']}", icon="🗑️")
+                st.experimental_rerun()
 
 # ----------------------------
 # Display Live Transaction Log
