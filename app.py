@@ -231,22 +231,36 @@ if st.session_state.transactions:
 
     st.bar_chart(monthly_chart.set_index("month")[["clipped_deposit", "withdrawal"]].rename(columns={"clipped_deposit": "deposit"}))
 
-    st.subheader("🪙 Contribution Room Left Over Time (Current Year)")
-    st.line_chart(monthly.set_index("month")["room_left"])
+    if monthly["month"].nunique() > 1:
+        st.subheader("🪙 Contribution Room Left Over Time (Current Year)")
+        st.line_chart(monthly.set_index("month")["room_left"])
+    else:
+        st.caption("📉 Not enough data to show contribution room trend over time. Add deposits across multiple months to activate this chart.")
 
-# Optional: Full contribution room over time (all years)
-    df_all = df.copy()
-    all_months = df_all.groupby(["month", "type"])["amount"].sum().unstack().fillna(0).reset_index()
-    if 'deposit' not in all_months.columns:
-        all_months['deposit'] = 0.0
-    if 'withdrawal' not in all_months.columns:
-        all_months['withdrawal'] = 0.0
+    # Progress bar: % of contribution room used
+    total_deposits = monthly["deposit"].sum()
+    contribution_percent = min(100, int((total_deposits / total_contribution_room) * 100))
+    st.subheader("📏 Contribution Room Progress")
+    bar_style = f"width: 100%; height: 25px; accent-color: {color};"
+    if contribution_percent > 90:
+        bar_style += " animation: pulse 1.5s infinite; border: 1px solid red;"
 
-    all_months["net_contribution"] = all_months["deposit"]
-    all_months["cumulative_contribution"] = all_months["deposit"].cumsum()
-    all_months["room_left"] = total_contribution_room - all_months["cumulative_contribution"]
+    st.markdown("""
+    <style>
+    @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.5); }
+        70% { box-shadow: 0 0 0 10px rgba(255, 0, 0, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-    st.subheader("📈 Total Contribution Room Left Over Time (All Transactions)")
-    st.line_chart(all_months.set_index("month")["room_left"])
+    st.markdown(f"<div style='margin-top: -10px;'><progress value='{contribution_percent}' max='100' style='{bar_style}'></progress></div>", unsafe_allow_html=True)
+    st.caption(f"{contribution_percent}% of your contribution room used")
+    remaining_room_val = total_contribution_room - total_deposits
+    remaining_color = '#2e7d32' if contribution_percent < 90 else '#d32f2f'
+    st.markdown(f"<div style='color:{remaining_color}; font-weight:bold; font-size:16px;'>💡 You have ${remaining_room_val:,.2f} in room remaining.</div>", unsafe_allow_html=True)
+
+
 
 
