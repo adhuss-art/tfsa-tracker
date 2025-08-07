@@ -133,9 +133,16 @@ with st.form("transaction_form"):
 # Clear All Transactions (Nuke Button)
 # ----------------------------
 if st.session_state.transactions:
-    if st.button("💣 Clear All Transactions"):
-        st.session_state.transactions.clear()
-        st.toast("All transactions cleared!", icon="💣")
+    with st.expander("💣 Clear All Transactions", expanded=False):
+        st.warning("Are you sure you want to delete **all** transactions? This action cannot be undone.")
+        col_yes, col_no = st.columns([1, 1])
+        with col_yes:
+            if st.button("✅ Yes, delete all"):
+                st.session_state.transactions.clear()
+                st.toast("All transactions cleared!", icon="💣")
+                st.rerun()
+        with col_no:
+            st.caption("Your data is safe until you confirm.")
 
 # ----------------------------
 # Display Live Transaction Log with delete buttons
