@@ -119,7 +119,7 @@ with st.form("transaction_form"):
             })
 
             if len(st.session_state.transactions) == 1 and t_type == "deposit":
-            st.success("💸💸💸 Congrats! You’ve just made your first deposit!")
+                st.success("💸💸💸 Congrats! You’ve just made your first deposit!")
         else:
             with st.spinner("Logging transaction..."):
                 if t_type == "deposit":
@@ -196,5 +196,8 @@ if st.session_state.transactions:
 
     st.subheader("📈 Total Contribution Room Left Over Time (All Transactions)")
     st.line_chart(all_months.set_index("month")["room_left"])
+
+
+
 
 
