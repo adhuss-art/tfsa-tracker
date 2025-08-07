@@ -93,7 +93,8 @@ with st.form("transaction_form"):
         if len(st.session_state.transactions) == 1 and t_type == "deposit":
             st.success("💸💸💸 Congrats! You’ve just made your first deposit!")
         else:
-            st.success("✅ Transaction added!")
+            with st.spinner("Logging transaction..."):
+                st.toast("✅ Transaction added!", icon="💼")
 
 # ----------------------------
 # Display Live Transaction Log
