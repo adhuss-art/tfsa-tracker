@@ -119,24 +119,16 @@ with st.form("transaction_form"):
             })
 
             if len(st.session_state.transactions) == 1 and t_type == "deposit":
-                st.success("💸💸💸 Congrats! You’ve just made your first deposit!")
-            else:
-                with st.spinner("Logging transaction..."):
-                    if t_type == "deposit":
-                        st.toast("💸 Deposit added!", icon="💸")
-                    elif t_type == "withdrawal" and t_amount <= remaining_room:
-                        st.toast("🔻 Withdrawal added!", icon="🔻")
-                        st.markdown("<span style='color:red;'>🔻 Withdrawal recorded</span>", unsafe_allow_html=True)
-
-        if len(st.session_state.transactions) == 1 and t_type == "deposit":
             st.success("💸💸💸 Congrats! You’ve just made your first deposit!")
         else:
             with st.spinner("Logging transaction..."):
                 if t_type == "deposit":
                     st.toast("💸 Deposit added!", icon="💸")
-                else:
+                elif t_type == "withdrawal" and t_amount <= remaining_room:
                     st.toast("🔻 Withdrawal added!", icon="🔻")
                     st.markdown("<span style='color:red;'>🔻 Withdrawal recorded</span>", unsafe_allow_html=True)
+
+        
 
 # ----------------------------
 # Display Live Transaction Log
