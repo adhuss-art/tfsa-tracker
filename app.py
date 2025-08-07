@@ -94,7 +94,11 @@ with st.form("transaction_form"):
             st.success("💸💸💸 Congrats! You’ve just made your first deposit!")
         else:
             with st.spinner("Logging transaction..."):
-                st.toast("✅ Transaction added!", icon="💼")
+                if t_type == "deposit":
+                    st.toast("💸 Deposit added!", icon="💸")
+                else:
+                    st.toast("🔻 Withdrawal added!", icon="🔻")
+                    st.markdown("<span style='color:red;'>🔻 Withdrawal recorded</span>", unsafe_allow_html=True)
 
 # ----------------------------
 # Display Live Transaction Log
@@ -162,5 +166,8 @@ if st.session_state.transactions:
 
     st.subheader("📈 Total Contribution Room Left Over Time (All Transactions)")
     st.line_chart(all_months.set_index("month")["room_left"])
+
+
+
 
 
