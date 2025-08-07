@@ -155,5 +155,4 @@ all_months["room_left"] = total_contribution_room - all_months["cumulative_contr
 st.subheader("📈 Total Contribution Room Left Over Time (All Transactions)")
 st.line_chart(all_months.set_index("month")["room_left"])
 
-else:
-    st.info("No transactions logged yet. Use the form above to begin tracking.")
+
