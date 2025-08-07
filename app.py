@@ -33,6 +33,7 @@ if ever_contributed == "No":
     for year in range(tfsa_start_year, current_year + 1):
         estimated_room += limits_by_year.get(year, 0)
     st.success(f"✅ Your estimated available contribution room is: ${estimated_room:,.2f}")
+    st.caption("This estimate is based on your date of birth, assuming you've never contributed to a TFSA. It adds together the CRA annual contribution limits starting from the year you turned 18.")
 else:
     estimated_room = st.number_input("Enter your unused TFSA room (manually, if known):", min_value=0, step=500, value=0)
 
@@ -58,8 +59,7 @@ with st.form("transaction_form"):
         })
 
         if len(st.session_state.transactions) == 1 and t_type == "deposit":
-            st.balloons()
-            st.success("💸💸💸 Congrats! You’ve just made your first deposit!")
+    st.success("💸💸💸 Congrats! You’ve just made your first deposit!")
         else:
             st.success("✅ Transaction added!")
 
@@ -90,8 +90,8 @@ if st.session_state.transactions:
     if 'withdrawal' not in monthly.columns:
         monthly['withdrawal'] = 0.0
 
-    monthly["net_contribution"] = monthly["deposit"] - monthly["withdrawal"]
-    monthly["cumulative_contribution"] = monthly["net_contribution"].cumsum()
+    monthly["net_contribution"] = monthly["deposit"]  # Withdrawals don't reduce room this year
+    monthly["cumulative_contribution"] = monthly["deposit"].cumsum()
     monthly["room_left"] = total_contribution_room - monthly["cumulative_contribution"]
 
     # ----------------------------
