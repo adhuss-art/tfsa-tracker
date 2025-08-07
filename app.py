@@ -66,12 +66,11 @@ else:
 # Log a New Transaction
 # ----------------------------
 # Use estimated_room for now
-yearly_limit = 7000
-total_contribution_room = estimated_room + yearly_limit
+total_contribution_room = estimated_room
 
 st.subheader("➕ Add a Transaction")
 with st.form("transaction_form"):
-    t_date = st.date_input("Transaction Date", value=datetime.today())
+    t_date = st.date_input("Transaction Date", value=datetime.today(), min_value=datetime(2009, 1, 1), max_value=datetime(current_year, 12, 31))
     t_type = st.radio("Type", ["deposit", "withdrawal"])
     t_amount = st.number_input("Amount", min_value=0.0, step=100.0)
     submitted = st.form_submit_button("Add Transaction")
@@ -176,11 +175,5 @@ if st.session_state.transactions:
 
     st.subheader("📈 Total Contribution Room Left Over Time (All Transactions)")
     st.line_chart(all_months.set_index("month")["room_left"])
-
-
-
-
-
-
 
 
