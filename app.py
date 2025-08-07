@@ -45,7 +45,20 @@ with st.form("transaction_form"):
             "type": t_type,
             "amount": t_amount
         })
-        st.success("Transaction added!")
+
+        if len(st.session_state.transactions) == 1 and t_type == "deposit":
+            st.balloons()
+            st.success("💸💸💸 Congrats! You’ve just made your first deposit!")
+        else:
+            st.success("✅ Transaction added!")
+
+# ----------------------------
+# Display Live Transaction Log
+# ----------------------------
+if st.session_state.transactions:
+    st.subheader("🧾 Logged Transactions")
+    df_log = pd.DataFrame(st.session_state.transactions)
+    st.dataframe(df_log.sort_values(by="date"))
 
 # ----------------------------
 # Convert Session Transactions to DataFrame
