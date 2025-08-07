@@ -220,7 +220,16 @@ if st.session_state.transactions:
     # Charts
     # ----------------------------
     st.subheader("📊 Deposits & Withdrawals by Month")
-    st.bar_chart(monthly.set_index("month")[["deposit", "withdrawal"]])
+    st.caption("This chart shows your monthly activity. If deposits exceed your contribution room, we cap the visual to stay compliant with CRA rules.")
+
+    # Clip deposits to total contribution room to prevent misleading visuals
+    monthly_chart = monthly.copy()
+    monthly_chart["clipped_deposit"] = monthly_chart["deposit"].clip(upper=total_contribution_room)
+
+    if monthly["deposit"].sum() > total_contribution_room:
+        st.markdown("<span style='color:orange;'>⚠️ Your deposits exceed your legal TFSA contribution room. To avoid CRA penalties, consider withdrawing the excess before year-end.</span>", unsafe_allow_html=True)
+
+    st.bar_chart(monthly_chart.set_index("month")[["clipped_deposit", "withdrawal"]].rename(columns={"clipped_deposit": "deposit"}))
 
     st.subheader("🪙 Contribution Room Left Over Time (Current Year)")
     st.line_chart(monthly.set_index("month")["room_left"])
