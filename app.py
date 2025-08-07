@@ -41,7 +41,7 @@ if ever_contributed == "No":
         estimated_room += limits_by_year.get(year, 0)
     st.success(f"✅ Your estimated available contribution room is: ${estimated_room:,.2f}")
     with st.expander("ℹ️ Why is this your estimated room?"):
-        st.markdown("""
+    st.markdown("""
         This estimate is based on your date of birth and assumes you've **never contributed** to a TFSA.
         
         Contribution room is calculated by adding together the annual TFSA limits from the year you turned 18 until the current year:
@@ -65,6 +65,8 @@ if ever_contributed == "No":
         - 2025: $7,000  
 
         If you’ve made any contributions in previous years, your actual room may be less. Withdrawals create new room, but **only in the following calendar year**.
+
+🔗 [Official CRA TFSA Contribution Limits](https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/tax-free-savings-account/contributions.html)
         """)
 else:
     estimated_room = st.number_input("Enter your unused TFSA room (manually, if known):", min_value=0, step=500, value=0)
