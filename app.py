@@ -134,7 +134,7 @@ if st.session_state.transactions:
     # ----------------------------
     # Charts
     # ----------------------------
-        st.subheader("📊 Deposits & Withdrawals by Month")
+    st.subheader("📊 Deposits & Withdrawals by Month")
     st.bar_chart(monthly.set_index("month")[["deposit", "withdrawal"]])
 
     st.subheader("🪙 Contribution Room Left Over Time (Current Year)")
@@ -154,5 +154,8 @@ if st.session_state.transactions:
 
     st.subheader("📈 Total Contribution Room Left Over Time (All Transactions)")
     st.line_chart(all_months.set_index("month")["room_left"])
+
+
+
 
 
