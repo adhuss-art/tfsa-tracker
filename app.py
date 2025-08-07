@@ -130,14 +130,6 @@ with st.form("transaction_form"):
         
 
 # ----------------------------
-# Undo / Delete Last Transaction
-# ----------------------------
-if st.session_state.transactions:
-    if st.button("❌ Undo Last Transaction"):
-        removed = st.session_state.transactions.pop()
-        st.toast(f"Removed last transaction: {removed['type']} of ${removed['amount']:,.2f}", icon="🗑️")
-
-# ----------------------------
 # Clear All Transactions (Nuke Button)
 # ----------------------------
 if st.session_state.transactions:
@@ -167,7 +159,7 @@ if st.session_state.transactions:
             if st.button("❌", key=f"delete_{i}"):
                 st.session_state.transactions.remove(row.to_dict())
                 st.toast(f"Deleted {row['type']} of ${row['amount']:,.2f} from {row['date']}", icon="🗑️")
-                st.experimental_rerun()
+                st.rerun()
 
 
 
@@ -240,8 +232,5 @@ if st.session_state.transactions:
 
     st.subheader("📈 Total Contribution Room Left Over Time (All Transactions)")
     st.line_chart(all_months.set_index("month")["room_left"])
-
-
-
 
 
