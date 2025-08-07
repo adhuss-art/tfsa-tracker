@@ -169,13 +169,7 @@ if st.session_state.transactions:
                 st.toast(f"Deleted {row['type']} of ${row['amount']:,.2f} from {row['date']}", icon="🗑️")
                 st.experimental_rerun()
 
-# ----------------------------
-# Display Live Transaction Log
-# ----------------------------
-if st.session_state.transactions:
-    st.subheader("🧾 Logged Transactions")
-    df_log = pd.DataFrame(st.session_state.transactions)
-    st.dataframe(df_log.sort_values(by="date"))
+
 
 # ----------------------------
 # Carryforward Tracker: Room from Withdrawals (for next year)
@@ -246,5 +240,8 @@ if st.session_state.transactions:
 
     st.subheader("📈 Total Contribution Room Left Over Time (All Transactions)")
     st.line_chart(all_months.set_index("month")["room_left"])
+
+
+
 
 
