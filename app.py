@@ -12,26 +12,37 @@ if 'transactions' not in st.session_state:
 # Settings
 # ----------------------------
 current_year = datetime.now().year
-yearly_limit = 7000  # TFSA limit for 2025, change if needed
-
 st.title("TFSA Monthly Tracker with Carryover Support")
 
 # ----------------------------
-# User Input: Carryover Room
+# TFSA Room Estimator
 # ----------------------------
-carryover_room = st.number_input(
-    f"Enter your unused TFSA room from previous years (before {current_year}):",
-    min_value=0,
-    step=500,
-    value=0
-)
+st.subheader("📅 Contribution Room Estimator")
+dob = st.date_input("Enter your date of birth:", value=datetime(1990, 1, 1))
+ever_contributed = st.radio("Have you ever contributed to a TFSA before?", ["Yes", "No"])
 
-# Total available room = carryover + this year's limit
-total_contribution_room = carryover_room + yearly_limit
+tfsa_start_year = max(dob.year + 18, 2009)
+estimated_room = 0
+
+if ever_contributed == "No":
+    limits_by_year = {
+        2009: 5000, 2010: 5000, 2011: 5000, 2012: 5000, 2013: 5500,
+        2014: 5500, 2015: 10000, 2016: 5500, 2017: 5500, 2018: 5500,
+        2019: 6000, 2020: 6000, 2021: 6000, 2022: 6000, 2023: 6500, 2024: 7000, 2025: 7000
+    }
+    for year in range(tfsa_start_year, current_year + 1):
+        estimated_room += limits_by_year.get(year, 0)
+    st.success(f"✅ Your estimated available contribution room is: ${estimated_room:,.2f}")
+else:
+    estimated_room = st.number_input("Enter your unused TFSA room (manually, if known):", min_value=0, step=500, value=0)
 
 # ----------------------------
 # Log a New Transaction
 # ----------------------------
+# Use estimated_room for now
+yearly_limit = 7000
+total_contribution_room = estimated_room + yearly_limit
+
 st.subheader("➕ Add a Transaction")
 with st.form("transaction_form"):
     t_date = st.date_input("Transaction Date", value=datetime.today())
