@@ -134,7 +134,8 @@ if st.session_state.transactions:
     # ----------------------------
     # Charts
     # ----------------------------
-        st.subheader("📊 Deposits & Withdrawals by Month")    st.bar_chart(monthly.set_index("month")[["deposit", "withdrawal"]])
+        st.subheader("📊 Deposits & Withdrawals by Month")
+    st.bar_chart(monthly.set_index("month")[["deposit", "withdrawal"]])
 
     st.subheader("🪙 Contribution Room Left Over Time (Current Year)")
     st.line_chart(monthly.set_index("month")["room_left"])
@@ -151,6 +152,7 @@ if st.session_state.transactions:
     all_months["cumulative_contribution"] = all_months["deposit"].cumsum()
     all_months["room_left"] = total_contribution_room - all_months["cumulative_contribution"]
 
-    st.subheader("📈 Total Contribution Room Left Over Time (All Transactions)")    st.line_chart(all_months.set_index("month")["room_left"])
+    st.subheader("📈 Total Contribution Room Left Over Time (All Transactions)")
+    st.line_chart(all_months.set_index("month")["room_left"])
 
 
