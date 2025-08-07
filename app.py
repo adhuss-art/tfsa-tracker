@@ -120,15 +120,46 @@ with st.form("transaction_form"):
 
             if len(st.session_state.transactions) == 1 and t_type == "deposit":
                 st.success("💸💸💸 Congrats! You’ve just made your first deposit!")
-        else:
             with st.spinner("Logging transaction..."):
                 if t_type == "deposit":
                     st.toast("💸 Deposit added!", icon="💸")
-                elif t_type == "withdrawal" and t_amount <= remaining_room:
+                elif t_type == "withdrawal":
                     st.toast("🔻 Withdrawal added!", icon="🔻")
                     st.markdown("<span style='color:red;'>🔻 Withdrawal recorded</span>", unsafe_allow_html=True)
 
         
+
+# ----------------------------
+# Undo / Delete Last Transaction
+# ----------------------------
+if st.session_state.transactions:
+    if st.button("❌ Undo Last Transaction"):
+        removed = st.session_state.transactions.pop()
+        st.toast(f"Removed last transaction: {removed['type']} of ${removed['amount']:,.2f}", icon="🗑️")
+
+# ----------------------------
+# Clear All Transactions (Nuke Button)
+# ----------------------------
+if st.session_state.transactions:
+    if st.button("💣 Clear All Transactions"):
+        st.session_state.transactions.clear()
+        st.toast("All transactions cleared!", icon="💣")
+
+# ----------------------------
+# Delete Specific Transaction
+# ----------------------------
+if st.session_state.transactions:
+    st.subheader("🗑️ Manage Transactions")
+    df_manage = pd.DataFrame(st.session_state.transactions).sort_values(by="date")
+    selected_index = st.selectbox(
+        "Select a transaction to delete:",
+        options=range(len(df_manage)),
+        format_func=lambda i: f"{df_manage.iloc[i]['date']} - {df_manage.iloc[i]['type']} - ${df_manage.iloc[i]['amount']:,.2f}"
+    )
+    if st.button("Delete Selected Transaction"):
+        deleted = df_manage.iloc[selected_index]
+        st.session_state.transactions.remove(deleted.to_dict())
+        st.toast(f"Deleted transaction from {deleted['date']}: {deleted['type']} of ${deleted['amount']:,.2f}", icon="🗑️")
 
 # ----------------------------
 # Display Live Transaction Log
@@ -137,6 +168,17 @@ if st.session_state.transactions:
     st.subheader("🧾 Logged Transactions")
     df_log = pd.DataFrame(st.session_state.transactions)
     st.dataframe(df_log.sort_values(by="date"))
+
+# ----------------------------
+# Carryforward Tracker: Room from Withdrawals (for next year)
+# ----------------------------
+if st.session_state.transactions:
+    total_withdrawals_this_year = sum(
+        t['amount'] for t in st.session_state.transactions
+        if t['type'] == 'withdrawal' and pd.to_datetime(t['date']).year == current_year
+    )
+    if total_withdrawals_this_year > 0:
+        st.markdown(f"<span style='color:orange;'>⚠️ ${total_withdrawals_this_year:,.2f} of room will be added to your TFSA limit next year due to withdrawals made this year.</span>", unsafe_allow_html=True)
 
 # ----------------------------
 # Convert Session Transactions to DataFrame
@@ -196,8 +238,5 @@ if st.session_state.transactions:
 
     st.subheader("📈 Total Contribution Room Left Over Time (All Transactions)")
     st.line_chart(all_months.set_index("month")["room_left"])
-
-
-
 
 
