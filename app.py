@@ -122,9 +122,9 @@ with st.form("transaction_form"):
                 st.success("💸💸💸 Congrats! You’ve just made your first deposit!")
             with st.spinner("Logging transaction..."):
                 if t_type == "deposit":
-                    st.toast("💸 Deposit added!", icon="💸")
+                    st.toast("Deposit added!", icon="💸")
                 elif t_type == "withdrawal":
-                    st.toast("🔻 Withdrawal added!", icon="🔻")
+                    st.toast("Withdrawal added!", icon="🔻")
                     st.markdown("<span style='color:red;'>🔻 Withdrawal recorded</span>", unsafe_allow_html=True)
 
         
