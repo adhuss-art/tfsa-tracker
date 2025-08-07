@@ -145,30 +145,28 @@ if st.session_state.transactions:
             st.caption("Your data is safe until you confirm.")
 
 # ----------------------------
-# Display Live Transaction Log with delete buttons
+# Display Live Transaction Log in expandable section
 # ----------------------------
 if st.session_state.transactions:
-    st.subheader("🧾 Logged Transactions")
-    df_log = pd.DataFrame(st.session_state.transactions)
-    df_log_sorted = df_log.sort_values(by="date").reset_index(drop=True)
+    with st.expander("🧾 View Logged Transactions"):
+        df_log = pd.DataFrame(st.session_state.transactions)
+        df_log_sorted = df_log.sort_values(by="date").reset_index(drop=True)
 
-    for i, row in df_log_sorted.iterrows():
-        col1, col2, col3, col4 = st.columns([4, 2, 2, 1])
-        with col1:
-            st.markdown(f"**{row['date']}**")
-        with col2:
-            color = 'green' if row['type'] == 'deposit' else 'red'
-            st.markdown(f"<span style='color:{color};'>{row['type'].capitalize()}</span>", unsafe_allow_html=True)
-        with col3:
-            color = 'green' if row['type'] == 'deposit' else 'red'
-            st.markdown(f"<span style='color:{color};'>${row['amount']:,.2f}</span>", unsafe_allow_html=True)
-        with col4:
-            if st.button("❌", key=f"delete_{i}"):
-                st.session_state.transactions.remove(row.to_dict())
-                st.toast(f"Deleted {row['type']} of ${row['amount']:,.2f} from {row['date']}", icon="🗑️")
-                st.rerun()
-
-
+        for i, row in df_log_sorted.iterrows():
+            col1, col2, col3, col4 = st.columns([4, 2, 2, 1])
+            with col1:
+                st.markdown(f"**{row['date']}**")
+            with col2:
+                color = 'green' if row['type'] == 'deposit' else 'red'
+                st.markdown(f"<span style='color:{color};'>{row['type'].capitalize()}</span>", unsafe_allow_html=True)
+            with col3:
+                color = 'green' if row['type'] == 'deposit' else 'red'
+                st.markdown(f"<span style='color:{color};'>${row['amount']:,.2f}</span>", unsafe_allow_html=True)
+            with col4:
+                if st.button("❌", key=f"delete_{i}"):
+                    st.session_state.transactions.remove(row.to_dict())
+                    st.toast(f"Deleted {row['type']} of ${row['amount']:,.2f} from {row['date']}", icon="🗑️")
+                    st.rerun()
 
 # ----------------------------
 # Carryforward Tracker: Room from Withdrawals (for next year)
@@ -224,14 +222,14 @@ if st.session_state.transactions:
     if this_month is not None:
         col_dep, col_with, col_warn = st.columns([2, 2, 3])
         with col_dep:
-            st.metric("💰 Deposits", f"${this_month['deposit']:,.2f}")
+            used_pct = int((this_month['deposit'] / total_contribution_room) * 100)
+        st.metric("💰 Deposits", f"${this_month['deposit']:,.2f}", f"{used_pct}% of limit")
         with col_with:
             st.metric("🔻 Withdrawals", f"${this_month['withdrawal']:,.2f}")
         with col_warn:
-            if this_month['deposit'] > total_contribution_room:
-                st.markdown("<span style='color:red;'>⚠️ Over-contributed this month</span>", unsafe_allow_html=True)
-            else:
-                st.markdown("<span style='color:green;'>✅ Within contribution limit</span>", unsafe_allow_html=True)
+            st.markdown(f"<div style='font-size:16px; color:{'red' if this_month['deposit'] > total_contribution_room else 'green'}; font-weight:bold;'>"
+                        f"{'⚠️ Over-contribution! Your limit is $' + format(total_contribution_room, ',.2f') if this_month['deposit'] > total_contribution_room else '✅ Within your contribution limit of $' + format(total_contribution_room, ',.2f')}"
+                        f"</div>", unsafe_allow_html=True)
 
     if monthly["month"].nunique() > 1:
         st.subheader("🪙 Contribution Room Left Over Time (Current Year)")
