@@ -78,7 +78,6 @@ def init_state():
         "fx_burst_counter": 0,
         "fx_burst_until": 0.0,
         "fx_burst_emoji": "💰",
-        "adv_checks": False,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -138,7 +137,7 @@ def trigger_burst(emoji: str, ms: int = 1050):
 st.title("TFSA Contribution Tracker")
 current_year = datetime.now().year
 
-# --- Explainer with highlights + full table (no index) ---
+# --- Explainer ---
 with st.expander("ℹ️ How TFSA contribution room works", expanded=False):
     highlights = [
         (2009, 5000),
@@ -212,9 +211,7 @@ m1.metric("This year's limit", f"${current_year_limit(current_year):,.0f}")
 m2.metric("Carryover into this year", f"${carryover_prior:,.0f}")
 m3.metric("Room left (est.)", f"${room_left:,.0f}")
 
-# =========================
 # --- Add a Transaction ---
-# =========================
 st.subheader("➕ Add a Transaction")
 with st.form("txn_form", clear_on_submit=False):
     c1, c2 = st.columns([1, 1])
@@ -242,17 +239,14 @@ with st.form("txn_form", clear_on_submit=False):
 
     if submitted:
         df_all = df_from_txns(st.session_state.transactions)
-
         if t_amount <= 0:
             st.error("Please enter an amount greater than $0.")
         else:
             if st.session_state.type_input == "deposit":
                 deposits_now = all_deposits_any_year(df_all)
                 allow_now = max(0.0, (carryover_prior + current_year_limit(current_year)) - deposits_now)
-
                 if t_amount > current_year_limit(current_year) and t_amount <= allow_now:
                     st.info(f"Over the {current_year} annual limit (${current_year_limit(current_year):,.0f}), but allowed because you have carryover.")
-
                 if t_amount > allow_now:
                     st.error(f"❌ Deposit exceeds your available contribution room for {current_year}. Available now: ${allow_now:,.0f}.")
                 else:
@@ -293,9 +287,7 @@ if "fx_anchor" in locals():
     else:
         fx_anchor.empty()
 
-# =========================
 # --- Logged Transactions ---
-# =========================
 st.subheader("🧾 Logged transactions")
 info_col, bomb_col = st.columns([10, 1])
 with info_col:
@@ -323,7 +315,6 @@ with st.expander(f"Show transactions ({len(st.session_state.transactions)})", ex
                 st.session_state.confirming_clear = False
                 st.session_state.log_open = True
                 st.rerun()
-
     if df_all.empty:
         st.info("No transactions yet. Add your first deposit to get started.")
     else:
@@ -343,9 +334,7 @@ with st.expander(f"Show transactions ({len(st.session_state.transactions)})", ex
                     st.session_state.log_open = True
                     st.rerun()
 
-# =========================
-# ------- Analytics -------
-# =========================
+# --- Analytics ---
 st.subheader("📊 Monthly Summary")
 if df_all.empty:
     st.info("No data yet. Add a transaction to see summary and charts.")
@@ -373,14 +362,9 @@ else:
     ).properties(height=260)
 
     st.altair_chart(bar, use_container_width=True)
-       with st.expander("Show table", expanded=False):
+    with st.expander("Show table", expanded=False):
         st.dataframe(
             monthly.style.format({
                 "deposit": "${:,.2f}",
                 "withdrawal": "${:,.2f}",
-                "net_contribution": "${:,.2f}",
-                "cumulative_contribution": "${:,.2f}",
-            }),
-            use_container_width=True
-        )
-
+                "net_contribution": "${:,.2f
