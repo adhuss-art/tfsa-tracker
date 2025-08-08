@@ -1,35 +1,12 @@
-import time
-from datetime import datetime, date
-
-import pandas as pd
 import streamlit as st
+import pandas as pd
+from datetime import datetime, date
+import time
 
 # =========================
 # ---- App Configuration --
 # =========================
-st.set_page_config(page_title="TFSA Tracker", page_icon="🧮", layout="centered")
-
-# Small global CSS to tighten spacing and style our custom progress bar & emoji pops
-st.markdown(
-    """
-    <style>
-      .tight { margin-top: 0.25rem; margin-bottom: 0.25rem; }
-      .title-tight h1 { margin-bottom: 0.4rem !important; }
-      /* Custom progress bar */
-      .bar-wrap {width:100%; height:14px; background:rgba(255,255,255,0.08); border-radius:10px; position:relative; overflow:hidden;}
-      .bar-fill {height:100%; border-radius:10px; transition:width .6s ease;}
-      .bar-pill {display:flex; justify-content:space-between; align-items:center; font-weight:600; margin-bottom:.35rem;}
-      /* Glow when nearly full */
-      .glow { box-shadow: 0 0 10px rgba(255, 77, 77,.6), 0 0 20px rgba(255, 77, 77,.4); }
-      /* Add/Withdraw emoji pop next to the button */
-      .pop-emoji { font-size: 1.6rem; line-height:1; padding-left:.5rem; animation: hop .75s ease-out 1; display:inline-block; }
-      @keyframes hop { 0%{ transform: translateY(6px) scale(.8); opacity:.2 } 40%{ transform: translateY(-6px) scale(1.05); opacity:1 } 100%{ transform: translateY(0) scale(1); opacity:.85 } }
-      /* Compact table header cells left-aligned */
-      table thead th { text-align:left !important; }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+st.set_page_config(page_title="TFSA Tracker", page_icon="🧮", layout="wide")
 
 # -------------------------
 # Session Defaults
@@ -38,19 +15,76 @@ def init_state():
     defaults = {
         "transactions": [],         # list of dicts with id, date, type, amount
         "next_id": 1,               # autoincrement id for transaction rows
-        "confirming_clear": False,  # for the clear-all confirmation UI
         "ever_contributed": "No",   # default for estimator
         "carryover_manual": 0.0,    # manual carryover when ever_contributed == "Yes"
         "amount_input": 0.0,        # form inputs (helps reset)
         "type_input": "deposit",
-        # simple flash next to Add button
-        "flash": None,              # {"type": "deposit"/"withdrawal", "ts": float}
+        "log_open": True,           # remember expander state for Logged transactions
+        "show_table_open": False,   # remember expander state for monthly table
+        "confirming_clear": False,  # inline confirm for clear-all
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
 
 init_state()
+
+# -------------------------
+# Compact / UI tweaks (CSS)
+# -------------------------
+st.markdown(
+    """
+    <style>
+      /* tighten the huge top gap under the H1 */
+      section.main > div:first-child { padding-top: 0.25rem !important; }
+      h1 { margin-bottom: 0.4rem; }
+
+      /* Compact DataFrame look */
+      .stDataFrame table { font-size: 0.95rem; }
+      .stDataFrame [data-testid="stDataFrameResizable"] { gap: 0.25rem; }
+
+      /* Pretty metric labels */
+      .muted { opacity: 0.9; }
+
+      /* Custom progress bar track */
+      .room-wrap {
+          width: 100%;
+          background: rgba(255,255,255,0.07);
+          height: 16px;
+          border-radius: 999px;
+          position: relative;
+          overflow: hidden;
+      }
+      .room-fill {
+          height: 100%;
+          border-radius: 999px;
+          transition: width 600ms ease;
+          box-shadow: none;
+      }
+      .room-fill.glow {
+          box-shadow: 0 0 12px rgba(255,60,60,0.55), 0 0 24px rgba(255,60,60,0.35);
+      }
+
+      /* Small helper text line under the bar */
+      .room-line {
+          display:flex; justify-content: space-between; font-weight:600; margin-top: 6px;
+      }
+
+      /* Inline bomb confirm card */
+      .danger-card {
+          background: #3a3824;
+          border-radius: 10px;
+          padding: 12px 14px;
+          color: #efecc2;
+      }
+
+      /* Align numbers in monthly table left (Streamlit centers by default) */
+      .stDataFrame tbody td div { justify-content: flex-start !important; }
+
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 # -------------------------
 # Constants / Helpers
@@ -82,49 +116,44 @@ def df_from_txns(txns: list) -> pd.DataFrame:
     df["month"] = df["date"].dt.to_period("M").astype(str)
     return df
 
-def deposits_in_year(df: pd.DataFrame, year: int) -> float:
+def current_year_deposits(df: pd.DataFrame, year: int) -> float:
     if df.empty:
         return 0.0
-    return float(df.query("year == @year and type == 'deposit'")["amount"].sum())
+    filt = (df["year"] == year) & (df["type"] == "deposit")
+    return float(df.loc[filt, "amount"].sum())
 
 def lifetime_balance(df: pd.DataFrame) -> float:
     if df.empty:
         return 0.0
-    deposits = float(df.loc[df["type"] == "deposit", "amount"].sum())
-    withdrawals = float(df.loc[df["type"] == "withdrawal", "amount"].sum())
+    deposits = float(df.loc[df["type"] == "deposit", "amount"].sum()) if "type" in df else 0.0
+    withdrawals = float(df.loc[df["type"] == "withdrawal", "amount"].sum()) if "type" in df else 0.0
     return deposits - withdrawals
 
-# ---------- Limits table helpers ----------
-def limits_df() -> pd.DataFrame:
-    df = pd.DataFrame(
-        [{"Year": y, "Limit ($)": LIMITS_BY_YEAR[y]} for y in sorted(LIMITS_BY_YEAR.keys())]
-    )
-    df["Limit ($)"] = df["Limit ($)"].map(lambda x: f"${x:,.0f}")
-    return df
+def color_for_pct(p: float) -> str:
+    """Return a hex for the fill based on used%."""
+    # green -> yellow -> red
+    if p < 60:
+        return "#22c55e"   # green
+    elif p < 85:
+        return "#fbbf24"   # amber
+    else:
+        return "#ef4444"   # red
 
-def compact_table(df: pd.DataFrame):
-    # Use a Pandas Styler so we can tighten spacing & left-align; hide index (no counts)
-    styler = (
-        df.style
-        .set_properties(**{"text-align": "left", "padding": "6px 10px", "font-size": "0.95rem"})
-        .hide(axis="index")
-        .set_table_styles([
-            {"selector": "th", "props": [("text-align", "left"), ("padding", "6px 10px")]},
-            {"selector": "tbody td", "props": [("border-bottom", "1px solid rgba(255,255,255,0.06)")]},
-            {"selector": "thead th", "props": [("border-bottom", "1px solid rgba(255,255,255,0.12)")]},
-        ])
-    )
-    return styler
+def glow_needed(p: float) -> bool:
+    return p >= 92.0
+
+def annual_limits_df():
+    rows = [{"Year": y, "Limit ($)": f"${LIMITS_BY_YEAR[y]:,}"} for y in sorted(LIMITS_BY_YEAR)]
+    return pd.DataFrame(rows)
 
 # =========================
 # --------- UI ------------
 # =========================
-st.markdown('<div class="title-tight"></div>', unsafe_allow_html=True)
 st.title("TFSA Contribution Tracker")
 
 current_year = datetime.now().year
 
-# --- Explainer ---
+# --- Estimator Header / Explainer ---
 with st.expander("ℹ️ How TFSA contribution room works", expanded=False):
     st.markdown(
         """
@@ -133,13 +162,14 @@ with st.expander("ℹ️ How TFSA contribution room works", expanded=False):
 - **Deposits** reduce this year’s available room.
 - **Withdrawals** do **not** give room back until **January 1 of the next year**.
 - CRA is the source of truth. This app is an educational helper; confirm with CRA if you’re unsure.
-
-**Annual limits (selected key years):** 2009 $5,000 • 2013 $5,500 • 2015 $10,000 • 2019 $6,000 • 2023 $6,500 • 2024 $7,000 • 2025 $7,000
         """
     )
-    with st.expander("Show full annual TFSA limits (2009–2025)", expanded=False):
-        st.caption("Complete list from inception. Values are per CRA yearly announcements.")
-        st.table(compact_table(limits_df()))
+    st.markdown("**Full annual TFSA limits (2009 → 2025):**")
+    st.dataframe(
+        annual_limits_df(),
+        use_container_width=True,
+        hide_index=True
+    )
 
 # --- Estimator / Input ---
 st.subheader("📅 Contribution Room Estimator")
@@ -150,12 +180,13 @@ with colA:
 with colB:
     st.session_state.ever_contributed = st.radio("Have you ever contributed to a TFSA before?", ["No", "Yes"], index=(0 if st.session_state.ever_contributed == "No" else 1))
 
-# Estimation
 if st.session_state.ever_contributed == "No":
+    # If never contributed, your available room = sum of all years from start to current
     estimated_room_total = total_room_from_inception(dob, current_year)
     carryover_prior = estimated_room_total - current_year_limit(current_year)
     st.success(f"Estimated available room (all-time if you've truly never contributed): **${estimated_room_total:,.0f}**")
 else:
+    # If you *have* contributed, ask for carryover
     st.session_state.carryover_manual = st.number_input(
         "Enter your unused TFSA room carried into this year (best estimate):",
         min_value=0.0, step=500.0, value=float(st.session_state.carryover_manual)
@@ -164,33 +195,24 @@ else:
     carryover_prior = st.session_state.carryover_manual
     st.info(f"Estimated total room available **this year** (carryover + {current_year} limit): **${estimated_room_total:,.0f}**")
 
-# Top Metrics
+# --- Top Metrics / Progress ---
 df_all = df_from_txns(st.session_state.transactions)
-deposits_ytd = deposits_in_year(df_all, current_year)
+deposits_ytd = current_year_deposits(df_all, current_year)
 room_used_pct = (deposits_ytd / estimated_room_total * 100.0) if estimated_room_total > 0 else 0.0
 room_left = max(0.0, estimated_room_total - deposits_ytd)
 
-# Custom gradient progress bar
 st.write("")  # spacer
-left_label, right_label = st.columns([4, 1])
-with left_label:
-    st.markdown(f'<div class="bar-pill">Contribution room used</div>', unsafe_allow_html=True)
-with right_label:
-    st.markdown(f'<div style="text-align:right; font-weight:600;" class="tight">{room_used_pct:.1f}%</div>', unsafe_allow_html=True)
 
-bar_color = "#22c55e"  # green
-if room_used_pct >= 80:
-    bar_color = "#ef4444"  # red
-elif room_used_pct >= 60:
-    bar_color = "#f59e0b"  # amber
-
-glow = "glow" if room_used_pct >= 95 else ""
+# Custom progress bar with color + glow near full
+fill_color = color_for_pct(room_used_pct)
+glow_cls = "glow" if glow_needed(room_used_pct) else ""
 st.markdown(
-    f'''
-    <div class="bar-wrap">
-        <div class="bar-fill {glow}" style="background:{bar_color}; width:{min(room_used_pct,100):.2f}%"></div>
+    f"""
+    <div class="room-line"><div>Contribution room used</div><div>{room_used_pct:.1f}%</div></div>
+    <div class="room-wrap">
+      <div class="room-fill {glow_cls}" style="width:{min(room_used_pct,100):.1f}%; background:{fill_color};"></div>
     </div>
-    ''',
+    """,
     unsafe_allow_html=True,
 )
 
@@ -199,41 +221,194 @@ metric1.metric("This year's limit", f"${current_year_limit(current_year):,.0f}")
 metric2.metric("Carryover into this year", f"${carryover_prior:,.0f}")
 metric3.metric("Room left (est.)", f"${room_left:,.0f}")
 
+# Breakdown card (short + clear, no redundant badge)
+with st.container(border=True):
+    st.markdown("### This year’s room breakdown")
+    k1, k2, k3 = st.columns(3)
+    with k1:
+        st.caption("Total room (carryover + limit)")
+        st.subheader(f"${estimated_room_total:,.0f}")
+    with k2:
+        st.caption("Deposits YTD")
+        st.subheader(f"${deposits_ytd:,.0f}")
+    with k3:
+        st.caption("Remaining (est.)")
+        st.subheader(f"${room_left:,.0f}")
+
 # =========================
 # --- Add a Transaction ---
 # =========================
-st.subheader("➕ Add a Transaction")
+st.markdown("### ➕ Add a Transaction")
 
 with st.form("txn_form", clear_on_submit=False):
-    c1, c2 = st.columns([1, 1])
+    c1, c2, c3 = st.columns([1, 1, 1])
     with c1:
         t_date = st.date_input("Date", value=date.today(), min_value=date(2009, 1, 1), max_value=date.today())
     with c2:
-        st.session_state.type_input = st.radio("Type", ["deposit", "withdrawal"],
-                                               index=(0 if st.session_state.type_input == "deposit" else 1),
-                                               horizontal=True)
-
-    t_amount = st.number_input("Amount", min_value=0.0, step=100.0, value=float(st.session_state.amount_input))
-    # Add button row with emoji flash placeholder
-    btn_col, emoji_col = st.columns([0.15, 0.85])
+        st.session_state.type_input = st.radio("Type", ["deposit", "withdrawal"], index=(0 if st.session_state.type_input == "deposit" else 1), horizontal=True)
+    with c3:
+        t_amount = st.number_input("Amount", min_value=0.0, step=100.0, value=float(st.session_state.amount_input))
+    # Add button + emoji slot to its right
+    btn_col, emoji_col = st.columns([0.2, 0.8])
     with btn_col:
         submitted = st.form_submit_button("Add", type="primary", use_container_width=True)
     with emoji_col:
-        # Show small emoji pop next to button when we have a recent flash event (< 1.4s)
-        flash = st.session_state.flash
-        if flash:
-            since = time.time() - flash["ts"]
-            if since < 1.4:
-                emj = "💰" if flash["type"] == "deposit" else "💸"
-                st.markdown(f'<span class="pop-emoji">{emj}</span>', unsafe_allow_html=True)
-            else:
-                st.session_state.flash = None  # auto-clear
+        # placeholder where the emoji burst will appear next to the button
+        emoji_slot = st.empty()
 
     if submitted:
         df_all = df_from_txns(st.session_state.transactions)
-
         if t_amount <= 0:
             st.error("Please enter an amount greater than $0.")
         else:
             if st.session_state.type_input == "deposit":
-                # Allow deposit up to (carryover + current year limit) for the *deposit
+                # Allow deposit as long as **current-year** total deposits <= total available this year.
+                # This lets a single deposit exceed the single-year limit if carryover covers it.
+                deposit_year = t_date.year
+                deposits_that_year = current_year_deposits(df_all, deposit_year)
+                if deposit_year == current_year:
+                    allowed_room = max(0.0, (carryover_prior + current_year_limit(current_year)) - deposits_that_year)
+                else:
+                    # For prior years, be conservative: cap to that year's limit minus any logged deposits for that year.
+                    allowed_room = max(0.0, current_year_limit(deposit_year) - deposits_that_year)
+
+                if t_amount > allowed_room and deposit_year == current_year:
+                    st.error(f"❌ Deposit would exceed your remaining room for {deposit_year}. Available: ${allowed_room:,.0f}.")
+                elif t_amount > allowed_room and deposit_year != current_year:
+                    st.error(f"❌ Deposit exceeds that year's limit. Available for {deposit_year}: ${allowed_room:,.0f}.")
+                else:
+                    st.session_state.transactions.append({
+                        "id": st.session_state.next_id,
+                        "date": t_date.strftime("%Y-%m-%d"),
+                        "type": "deposit",
+                        "amount": float(t_amount)
+                    })
+                    st.session_state.next_id += 1
+                    st.session_state.amount_input = 0.0
+                    # Emoji burst (💰) right next to button – always shows on click
+                    emoji_slot.markdown("<div style='font-size:28px'>💰</div>", unsafe_allow_html=True)
+                    time.sleep(1.0)
+                    emoji_slot.empty()
+            else:
+                # Withdrawal cannot exceed balance (lifetime deposits - withdrawals)
+                bal = lifetime_balance(df_all)
+                if t_amount > bal:
+                    st.error(f"❌ Withdrawal exceeds available balance. Current balance: ${bal:,.0f}.")
+                else:
+                    st.session_state.transactions.append({
+                        "id": st.session_state.next_id,
+                        "date": t_date.strftime("%Y-%m-%d"),
+                        "type": "withdrawal",
+                        "amount": float(t_amount)
+                    })
+                    st.session_state.next_id += 1
+                    st.session_state.amount_input = 0.0
+                    # Emoji burst (💸) right next to button – always shows on click
+                    emoji_slot.markdown("<div style='font-size:28px'>💸</div>", unsafe_allow_html=True)
+                    time.sleep(1.0)
+                    emoji_slot.empty()
+
+# =========================
+# --- Logged Transactions --
+# =========================
+head_left, head_right = st.columns([1, 0.08])
+with head_left:
+    st.subheader("🧾 Logged transactions")
+    st.caption("Most recent first. Delete individual rows with the ✖ buttons.")
+
+with head_right:
+    # Bomb icon toggles confirm UI
+    if not st.session_state.confirming_clear:
+        if st.button("💣", help="Clear all transactions"):
+            st.session_state.confirming_clear = True
+    else:
+        pass  # confirmation card will render below list
+
+df_all = df_from_txns(st.session_state.transactions)
+
+with st.expander(f"Show transactions ({len(st.session_state.transactions)})", expanded=st.session_state.log_open):
+    # Remember their choice
+    st.session_state.log_open = True
+    if df_all.empty:
+        st.info("No transactions yet. Add your first deposit to get started.")
+    else:
+        df_log = df_all.sort_values(by="date", ascending=False).copy()
+        for _, row in df_log.iterrows():
+            line = st.container(border=True)
+            with line:
+                c1, c2, c3, c4 = st.columns([1.2, 1, 1, 0.4])
+                c1.write(f"**{row['date'].strftime('%Y-%m-%d')}**")
+                if row["type"] == "deposit":
+                    c2.markdown(f"<span style='color:#22c55e;'>💵 Deposit</span>", unsafe_allow_html=True)
+                else:
+                    c2.markdown(f"<span style='color:#ef4444;'>🔻 Withdrawal</span>", unsafe_allow_html=True)
+                c3.write(f"${row['amount']:,.2f}")
+                if c4.button("✖", key=f"del_{int(row['id'])}", help="Delete this transaction"):
+                    # delete by ID (no rerun -> keeps expander open)
+                    st.session_state.transactions = [tx for tx in st.session_state.transactions if tx["id"] != int(row["id"])]
+                    # force re-render of this block by just writing a tiny placeholder
+                    st.write("")
+
+        # Inline clear-all confirmation (appears under the bomb)
+        if st.session_state.confirming_clear:
+            st.write("")
+            st.markdown('<div class="danger-card">Delete all transactions? This cannot be undone.</div>', unsafe_allow_html=True)
+            cc1, cc2 = st.columns([0.16, 0.18])
+            with cc1:
+                if st.button("Yes, delete all", type="primary"):
+                    st.session_state.transactions = []
+                    st.session_state.confirming_clear = False
+                    st.success("All transactions cleared.")
+            with cc2:
+                if st.button("No, keep them"):
+                    st.session_state.confirming_clear = False
+
+# =========================
+# ------- Analytics -------
+# =========================
+st.subheader("📊 Monthly Summary")
+
+df_all = df_from_txns(st.session_state.transactions)
+if df_all.empty:
+    st.info("No data yet. Add a transaction to see summary and charts.")
+else:
+    # Current-year monthly summary
+    df_curr = df_all[df_all["year"] == current_year].copy()
+    monthly = (
+        df_curr.groupby(["month", "type"])["amount"]
+        .sum()
+        .unstack()
+        .reindex(columns=["deposit", "withdrawal"], fill_value=0.0)
+        .fillna(0.0)
+        .reset_index()
+    )
+
+    # Room math (deposits consume room; withdrawals don't restore in-year)
+    total_room_this_year = (carryover_prior + current_year_limit(current_year)) if st.session_state.ever_contributed == "Yes" \
+        else (total_room_from_inception(dob, current_year) - total_room_from_inception(dob, current_year - 1) + carryover_prior if current_year > 2009 else current_year_limit(current_year))
+
+    monthly["net_contribution"] = monthly["deposit"]
+    monthly["cumulative_contribution"] = monthly["deposit"].cumsum()
+    monthly["room_left"] = (total_room_this_year - monthly["cumulative_contribution"]).clip(lower=0.0)
+
+    # Intuitive chart: deposits (green) vs withdrawals (red)
+    st.bar_chart(
+        monthly.set_index("month")[["deposit", "withdrawal"]],
+        use_container_width=True,
+    )
+
+    with st.expander("Show table", expanded=st.session_state.show_table_open):
+        st.session_state.show_table_open = True
+        # Compact table with currency formatting
+        fmt = {
+            "deposit": "${:,.2f}",
+            "withdrawal": "${:,.2f}",
+            "net_contribution": "${:,.2f}",
+            "cumulative_contribution": "${:,.2f}",
+            "room_left": "${:,.2f}",
+        }
+        st.dataframe(
+            monthly.style.format(fmt),
+            use_container_width=True,
+            hide_index=True
+        )
