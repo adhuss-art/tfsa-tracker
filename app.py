@@ -29,7 +29,7 @@ main .block-container { padding-top: 1.05rem; }
 }
 .room-fill.glow { box-shadow: 0 0 16px rgba(239,68,68,.55); }
 
-/* Button emoji burst (always shows near the Add button) */
+/* Button emoji burst */
 .fx-wrap { position: relative; display:inline-block; }
 .fx-emoji {
   position: absolute; right: -8px; top: -6px;
@@ -67,19 +67,17 @@ h1 + div[data-testid="stExpander"] { margin-top: .35rem; }
 # -------------------------
 def init_state():
     defaults = {
-        "transactions": [],         # list of {id, date, type, amount}
+        "transactions": [],
         "next_id": 1,
-        "confirming_clear": False,  # for the clear-all confirmation UI
+        "confirming_clear": False,
         "ever_contributed": "No",
         "carryover_manual": 0.0,
         "amount_input": 0.0,
         "type_input": "deposit",
-        "log_open": True,           # keep transactions expander open
-        # emoji burst state
+        "log_open": True,
         "fx_burst_counter": 0,
         "fx_burst_until": 0.0,
         "fx_burst_emoji": "💰",
-        # advanced checks toggle
         "adv_checks": False,
     }
     for k, v in defaults.items():
@@ -117,12 +115,6 @@ def df_from_txns(txns: list) -> pd.DataFrame:
     df["month"] = df["date"].dt.to_period("M").astype(str)
     return df
 
-def current_year_deposits(df: pd.DataFrame, year: int) -> float:
-    if df.empty:
-        return 0.0
-    filt = (df["type"] == "deposit") & (df["year"] == year)
-    return float(df.loc[filt, "amount"].sum())
-
 def all_deposits_any_year(df: pd.DataFrame) -> float:
     if df.empty:
         return 0.0
@@ -144,29 +136,43 @@ def trigger_burst(emoji: str, ms: int = 1050):
 # --------- UI ------------
 # =========================
 st.title("TFSA Contribution Tracker")
-
 current_year = datetime.now().year
 
-# --- Explainer ---
+# --- Explainer with highlights + full table ---
 with st.expander("ℹ️ How TFSA contribution room works", expanded=False):
+    highlights = [
+        (2009, 5000),
+        (2013, 5500),
+        (2015, 10000),
+        (2019, 6000),
+        (2023, 6500),
+        (2024, 7000),
+        (2025, 7000),
+    ]
+    limits_str = " • ".join([f"{year} ${amt:,}" for year, amt in highlights])
+
     st.markdown(
-        """
+        f"""
 **Key rules (simplified):**
 - Your TFSA room starts accruing from the year you turn **18** (or **2009**, whichever is later).
 - **Deposits** reduce this year’s available room.
 - **Withdrawals** do **not** give room back until **January 1 of the next year**.
 - CRA is the source of truth. This app is an educational helper; confirm with CRA if you’re unsure.
 
-**Annual limits (highlights):** 2009 $5,000 • 2013 $5,500 • 2015 $10,000 • 2019 $6,000 • 2023 $6,500 • 2024 $7,000 • 2025 $7,000
+**Annual limits (highlights):** {limits_str}
         """
     )
 
+    st.markdown("**Full annual TFSA limits**")
+    full_df = pd.DataFrame(list(LIMITS_BY_YEAR.items()), columns=["Year", "Limit ($)"])
+    full_df["Limit ($)"] = full_df["Limit ($)"].apply(lambda x: f"${x:,}")
+    st.table(full_df)
+
 # --- Estimator ---
 st.subheader("📅 Contribution Room Estimator")
-
 colA, colB = st.columns([1, 1])
 with colA:
-    dob = st.date_input("Your date of birth", value=date(1990, 1, 1), min_value=date(1900, 1, 1), max_value=date.today())
+    dob = st.date_input("Your date of birth", value=date(1990, 1, 1))
 with colB:
     st.session_state.ever_contributed = st.radio(
         "Have you ever contributed to a TFSA before?",
@@ -187,10 +193,8 @@ else:
     carryover_prior = st.session_state.carryover_manual
     st.info(f"Estimated total room available **this year** (carryover + {current_year} limit): **${estimated_room_total:,.0f}**")
 
-# --- Top Meter + Metrics ---
+# --- Meter ---
 df_all = df_from_txns(st.session_state.transactions)
-
-# "What can I contribute right now?" logic — count ALL deposits logged so far
 deposits_counted_now = all_deposits_any_year(df_all)
 room_used_pct = (deposits_counted_now / estimated_room_total * 100.0) if estimated_room_total > 0 else 0.0
 room_left = max(0.0, estimated_room_total - deposits_counted_now)
@@ -207,16 +211,6 @@ m1.metric("This year's limit", f"${current_year_limit(current_year):,.0f}")
 m2.metric("Carryover into this year", f"${carryover_prior:,.0f}")
 m3.metric("Room left (est.)", f"${room_left:,.0f}")
 
-# Advanced checks (optional, info-only)
-with st.expander("⚙️ Advanced checks (optional)", expanded=False):
-    st.session_state.adv_checks = st.checkbox("Show inception-cap warning", value=st.session_state.adv_checks,
-                                              help="Adds a soft warning if lifetime deposits exceed total TFSA room from your DOB to the current year.")
-    if st.session_state.adv_checks:
-        inception_cap = total_room_from_inception(dob, current_year)
-        lifetime_deposits = all_deposits_any_year(df_all)
-        if lifetime_deposits > inception_cap:
-            st.warning(f"Lifetime deposits (${lifetime_deposits:,.0f}) exceed estimated inception room (${inception_cap:,.0f}). Consider double-checking with CRA.")
-
 # =========================
 # --- Add a Transaction ---
 # =========================
@@ -224,12 +218,7 @@ st.subheader("➕ Add a Transaction")
 with st.form("txn_form", clear_on_submit=False):
     c1, c2 = st.columns([1, 1])
     with c1:
-        t_date = st.date_input(
-            "Date",
-            value=date.today(),
-            min_value=date(2009, 1, 1),
-            max_value=date.today()
-        )
+        t_date = st.date_input("Date", value=date.today())
         st.caption(
             f"Room checks use your **current-year available room** "
             f"(carryover + {current_year} limit) **regardless of the date you pick**."
@@ -243,12 +232,11 @@ with st.form("txn_form", clear_on_submit=False):
 
     t_amount = st.number_input("Amount", min_value=0.0, step=100.0, value=float(st.session_state.amount_input))
 
-    # Emoji appears right beside the Add button
     btn_col1, _ = st.columns([1, 3])
     with btn_col1:
         st.markdown('<div class="fx-wrap">', unsafe_allow_html=True)
         submitted = st.form_submit_button("Add", type="primary", use_container_width=True)
-        fx_anchor = st.empty()  # emoji anchor
+        fx_anchor = st.empty()
         st.markdown('</div>', unsafe_allow_html=True)
 
     if submitted:
@@ -258,18 +246,14 @@ with st.form("txn_form", clear_on_submit=False):
             st.error("Please enter an amount greater than $0.")
         else:
             if st.session_state.type_input == "deposit":
-                # Hard check (now logic): carryover + this-year limit − ALL deposits already logged
                 deposits_now = all_deposits_any_year(df_all)
                 allow_now = max(0.0, (carryover_prior + current_year_limit(current_year)) - deposits_now)
 
-                # Soft nudge if amount exceeds current-year limit alone but still allowed due to carryover
                 if t_amount > current_year_limit(current_year) and t_amount <= allow_now:
-                    st.info(f"Over the {current_year} annual limit (${current_year_limit(current_year):,.0f}), "
-                            "but allowed because you have carryover.")
+                    st.info(f"Over the {current_year} annual limit (${current_year_limit(current_year):,.0f}), but allowed because you have carryover.")
 
                 if t_amount > allow_now:
-                    st.error(f"❌ Deposit exceeds your available contribution room for {current_year}. "
-                             f"Available now: ${allow_now:,.0f}.")
+                    st.error(f"❌ Deposit exceeds your available contribution room for {current_year}. Available now: ${allow_now:,.0f}.")
                 else:
                     st.session_state.transactions.append({
                         "id": st.session_state.next_id,
@@ -280,7 +264,7 @@ with st.form("txn_form", clear_on_submit=False):
                     st.session_state.next_id += 1
                     st.session_state.amount_input = 0.0
                     st.session_state.log_open = True
-                    trigger_burst("💰")  # deposit emoji
+                    trigger_burst("💰")
                     st.rerun()
             else:
                 bal = lifetime_balance(df_all)
@@ -296,10 +280,9 @@ with st.form("txn_form", clear_on_submit=False):
                     st.session_state.next_id += 1
                     st.session_state.amount_input = 0.0
                     st.session_state.log_open = True
-                    trigger_burst("💸")  # withdrawal emoji
+                    trigger_burst("💸")
                     st.rerun()
 
-# Render the emoji burst during its short “alive” window on rerun
 if "fx_anchor" in locals():
     if time.time() < float(st.session_state.fx_burst_until):
         fx_anchor.markdown(
@@ -313,7 +296,6 @@ if "fx_anchor" in locals():
 # --- Logged Transactions ---
 # =========================
 st.subheader("🧾 Logged transactions")
-
 info_col, bomb_col = st.columns([10, 1])
 with info_col:
     st.caption("Most recent first. Delete individual rows with the ✖️ buttons.")
@@ -325,7 +307,6 @@ with bomb_col:
             st.rerun()
 
 df_all = df_from_txns(st.session_state.transactions)
-
 with st.expander(f"Show transactions ({len(st.session_state.transactions)})", expanded=st.session_state.log_open):
     if st.session_state.confirming_clear:
         st.warning("Delete all transactions? This cannot be undone.")
@@ -358,14 +339,13 @@ with st.expander(f"Show transactions ({len(st.session_state.transactions)})", ex
                 c3.write(f"${row['amount']:,.2f}")
                 if c4.button("✖️", key=f"del_{int(row['id'])}", help="Delete this transaction"):
                     st.session_state.transactions = [tx for tx in st.session_state.transactions if tx["id"] != int(row["id"])]
-                    st.session_state.log_open = True  # keep expander open
+                    st.session_state.log_open = True
                     st.rerun()
 
 # =========================
 # ------- Analytics -------
 # =========================
 st.subheader("📊 Monthly Summary")
-
 if df_all.empty:
     st.info("No data yet. Add a transaction to see summary and charts.")
 else:
@@ -378,12 +358,9 @@ else:
         .fillna(0.0)
         .reset_index()
     )
-
-    # Info series for current-year only (descriptive)
     monthly["net_contribution"] = monthly["deposit"]
     monthly["cumulative_contribution"] = monthly["deposit"].cumsum()
 
-    # Chart: green deposits vs red withdrawals
     chart_df = monthly.melt(id_vars="month", value_vars=["deposit", "withdrawal"], var_name="type", value_name="amount")
     color_scale = alt.Scale(domain=["deposit", "withdrawal"], range=["#22c55e", "#ef4444"])
 
@@ -395,7 +372,6 @@ else:
     ).properties(height=260)
 
     st.altair_chart(bar, use_container_width=True)
-
     with st.expander("Show table", expanded=False):
         st.dataframe(
             monthly.style.format({
