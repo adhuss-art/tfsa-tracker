@@ -12,11 +12,12 @@ st.set_page_config(page_title="TFSA Tracker", page_icon="🧮", layout="centered
 # Tighten top spacing + custom styles
 st.markdown("""
 <style>
+/* Compact header + page padding */
 section[data-testid="stHeader"] { height: 56px; }
-main .block-container { padding-top: 1.05rem; }
+main .block-container { padding-top: 0.9rem; }
 
 /* Contribution meter */
-.room-wrap { position: relative; margin: .15rem 0 .6rem 0; }
+.room-wrap { position: relative; margin: .15rem 0 .5rem 0; }
 .room-track {
   width: 100%; height: 14px; border-radius: 999px;
   background: linear-gradient(90deg,#1f2937 0%, #0b1220 100%); opacity:.9;
@@ -29,7 +30,7 @@ main .block-container { padding-top: 1.05rem; }
 }
 .room-fill.glow { box-shadow: 0 0 16px rgba(239,68,68,.55); }
 
-/* Button emoji burst */
+/* Button emoji burst next to Add button */
 .fx-wrap { position: relative; display:inline-block; }
 .fx-emoji {
   position: absolute; right: -8px; top: -6px;
@@ -52,13 +53,19 @@ div[data-testid="stExpander"] > details > summary { padding: .55rem .9rem; }
 .bomb-btn { text-align:right; }
 
 /* Help text readability in dark mode */
-small, .helptext { color: rgba(255,255,255,.65); }
+small, .helptext { color: rgba(255,255,255,.75); }
 
 /* Reduce top gap between title and first expander */
-h1 + div[data-testid="stExpander"] { margin-top: .35rem; }
+h1 + div[data-testid="stExpander"] { margin-top: .25rem; }
 
 /* Altair tooltip font */
-.vega-tooltip { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; font-size: 12px; }
+.vega-tooltip {
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+  font-size: 12px;
+}
+
+/* Table text color in dark mode to avoid black text */
+[data-baseweb="table"] { color: rgba(255,255,255,.92); }
 </style>
 """, unsafe_allow_html=True)
 
@@ -74,7 +81,7 @@ def init_state():
         "carryover_manual": 0.0,
         "amount_input": 0.0,
         "type_input": "deposit",
-        "log_open": True,
+        "log_open": True,              # keep transactions expander open after actions
         "fx_burst_counter": 0,
         "fx_burst_until": 0.0,
         "fx_burst_emoji": "💰",
@@ -96,6 +103,7 @@ LIMITS_BY_YEAR = {
 }
 
 def tfsa_start_year_from_dob(dob: date) -> int:
+    # TFSA room accrues from the later of 2009 or the year you turn 18
     return max(dob.year + 18, 2009)
 
 def total_room_from_inception(dob: date, through_year: int) -> float:
@@ -165,14 +173,15 @@ with st.expander("ℹ️ How TFSA contribution room works", expanded=False):
     st.markdown("**Full annual TFSA limits**")
     full_df = pd.DataFrame(list(LIMITS_BY_YEAR.items()), columns=["Year", "Limit ($)"])
     full_df["Limit ($)"] = full_df["Limit ($)"].apply(lambda x: f"${x:,}")
-    full_df = full_df.reset_index(drop=True)  # remove index column
+    full_df = full_df.reset_index(drop=True)
     st.table(full_df)
 
-# --- Estimator ---
+# --- Estimator / Inputs ---
 st.subheader("📅 Contribution Room Estimator")
+
 colA, colB = st.columns([1, 1])
 with colA:
-    dob = st.date_input("Your date of birth", value=date(1990, 1, 1))
+    dob = st.date_input("Your date of birth", value=date(1990, 1, 1), min_value=date(1900, 1, 1), max_value=date.today())
 with colB:
     st.session_state.ever_contributed = st.radio(
         "Have you ever contributed to a TFSA before?",
@@ -193,9 +202,9 @@ else:
     carryover_prior = st.session_state.carryover_manual
     st.info(f"Estimated total room available **this year** (carryover + {current_year} limit): **${estimated_room_total:,.0f}**")
 
-# --- Meter ---
+# --- Contribution Meter ---
 df_all = df_from_txns(st.session_state.transactions)
-deposits_counted_now = all_deposits_any_year(df_all)
+deposits_counted_now = all_deposits_any_year(df_all)   # total deposits we count against room now
 room_used_pct = (deposits_counted_now / estimated_room_total * 100.0) if estimated_room_total > 0 else 0.0
 room_left = max(0.0, estimated_room_total - deposits_counted_now)
 
@@ -211,12 +220,15 @@ m1.metric("This year's limit", f"${current_year_limit(current_year):,.0f}")
 m2.metric("Carryover into this year", f"${carryover_prior:,.0f}")
 m3.metric("Room left (est.)", f"${room_left:,.0f}")
 
+# =========================
 # --- Add a Transaction ---
+# =========================
 st.subheader("➕ Add a Transaction")
+
 with st.form("txn_form", clear_on_submit=False):
     c1, c2 = st.columns([1, 1])
     with c1:
-        t_date = st.date_input("Date", value=date.today())
+        t_date = st.date_input("Date", value=date.today(), min_value=date(2009, 1, 1), max_value=date.today())
         st.caption(
             f"Room checks use your **current-year available room** "
             f"(carryover + {current_year} limit) **regardless of the date you pick**."
@@ -232,6 +244,7 @@ with st.form("txn_form", clear_on_submit=False):
 
     btn_col1, _ = st.columns([1, 3])
     with btn_col1:
+        # Wrap the Add button in a container to anchor the emoji burst
         st.markdown('<div class="fx-wrap">', unsafe_allow_html=True)
         submitted = st.form_submit_button("Add", type="primary", use_container_width=True)
         fx_anchor = st.empty()
@@ -257,11 +270,12 @@ with st.form("txn_form", clear_on_submit=False):
                         "amount": float(t_amount)
                     })
                     st.session_state.next_id += 1
-                    st.session_state.amount_input = 0.0
-                    st.session_state.log_open = True
-                    trigger_burst("💰")
+                    st.session_state.amount_input = 0.0  # reset input
+                    st.session_state.log_open = True      # keep expander open
+                    trigger_burst("💰")                   # money bag
                     st.rerun()
             else:
+                # Withdrawal cannot exceed available lifetime balance
                 bal = lifetime_balance(df_all)
                 if t_amount > bal:
                     st.error(f"❌ Withdrawal exceeds available balance. Current balance: ${bal:,.0f}.")
@@ -275,9 +289,10 @@ with st.form("txn_form", clear_on_submit=False):
                     st.session_state.next_id += 1
                     st.session_state.amount_input = 0.0
                     st.session_state.log_open = True
-                    trigger_burst("💸")
+                    trigger_burst("💸")                   # flying money
                     st.rerun()
 
+# Show emoji burst near Add button after rerun
 if "fx_anchor" in locals():
     if time.time() < float(st.session_state.fx_burst_until):
         fx_anchor.markdown(
@@ -287,7 +302,9 @@ if "fx_anchor" in locals():
     else:
         fx_anchor.empty()
 
-# --- Logged Transactions ---
+# =========================
+# --- Logged Transactions -
+# =========================
 st.subheader("🧾 Logged transactions")
 info_col, bomb_col = st.columns([10, 1])
 with info_col:
@@ -315,6 +332,7 @@ with st.expander(f"Show transactions ({len(st.session_state.transactions)})", ex
                 st.session_state.confirming_clear = False
                 st.session_state.log_open = True
                 st.rerun()
+
     if df_all.empty:
         st.info("No transactions yet. Add your first deposit to get started.")
     else:
@@ -334,11 +352,15 @@ with st.expander(f"Show transactions ({len(st.session_state.transactions)})", ex
                     st.session_state.log_open = True
                     st.rerun()
 
-# --- Analytics ---
+# =========================
+# ------- Analytics -------
+# =========================
 st.subheader("📊 Monthly Summary")
+
 if df_all.empty:
     st.info("No data yet. Add a transaction to see summary and charts.")
 else:
+    # Current-year monthly summary
     df_curr = df_all[df_all["year"] == current_year].copy()
     monthly = (
         df_curr.groupby(["month", "type"])["amount"]
@@ -348,23 +370,35 @@ else:
         .fillna(0.0)
         .reset_index()
     )
-    monthly["net_contribution"] = monthly["deposit"]
+
+    # Compute helpers
+    monthly["net_contribution"] = monthly["deposit"]  # withdrawals don't restore room in-year
     monthly["cumulative_contribution"] = monthly["deposit"].cumsum()
 
-    chart_df = monthly.melt(id_vars="month", value_vars=["deposit", "withdrawal"], var_name="type", value_name="amount")
+    # Chart (green = deposit, red = withdrawal)
+    chart_df = monthly.melt(
+        id_vars="month",
+        value_vars=["deposit", "withdrawal"],
+        var_name="type",
+        value_name="amount"
+    )
     color_scale = alt.Scale(domain=["deposit", "withdrawal"], range=["#22c55e", "#ef4444"])
-
     bar = alt.Chart(chart_df).mark_bar().encode(
         x=alt.X('month:N', title="Month", sort=None),
         y=alt.Y('amount:Q', title='Amount ($)'),
         color=alt.Color('type:N', scale=color_scale, legend=alt.Legend(title="Type")),
         tooltip=['month', 'type', alt.Tooltip('amount:Q', format="$,")]
     ).properties(height=260)
-
     st.altair_chart(bar, use_container_width=True)
+
+    # Collapsible table (no count/index)
     with st.expander("Show table", expanded=False):
         st.dataframe(
             monthly.style.format({
                 "deposit": "${:,.2f}",
                 "withdrawal": "${:,.2f}",
-                "net_contribution": "${:,.2f
+                "net_contribution": "${:,.2f}",
+                "cumulative_contribution": "${:,.2f}",
+            }),
+            use_container_width=True
+        )
