@@ -1,13 +1,3 @@
-Yes — placing the deletable transaction list directly under the “Add a Transaction” section makes sense because it keeps all transaction-related actions in one place, improving workflow and discoverability.
-
-Here’s the updated approach:
-
-- Keep the form for adding a transaction.
-- Directly below the form, display a collapsible “🧾 Logged Transactions” section.
-- Inside, list all transactions with date, type, amount, and a ❌ delete button for each.
-- This section will be visible whether or not summary charts are displayed.
-
-```python
 # ----------------------------
 # Log a New Transaction
 # ----------------------------
@@ -53,4 +43,3 @@ if st.session_state.transactions:
             if col_d.button("❌", key=f"del_{i}"):
                 del st.session_state.transactions[i]
                 st.experimental_rerun()
-```
