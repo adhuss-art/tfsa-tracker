@@ -129,15 +129,18 @@ if st.session_state.transactions:
     remaining_room_val = total_contribution_room - total_deposits
     st.markdown(f"<div style='color:{'#2e7d32' if contribution_percent < 90 else '#d32f2f'}; font-weight:bold;'>💡 You have ${remaining_room_val:,.2f} in room remaining.</div>", unsafe_allow_html=True)
 
-    st.line_chart(df.groupby(df['date'].dt.to_period('M')).sum(numeric_only=True).to_timestamp())
+    monthly_chart = df.groupby(df['date'].dt.to_period('M')).sum(numeric_only=True).to_timestamp()
+    if len(monthly_chart) > 1:
+        st.line_chart(monthly_chart)
+    else:
+        st.info("📉 Not enough data to show contribution room trend over time. Add deposits across multiple months to activate this chart.")
 
-    # Transaction controls
-    st.subheader("📋 Transaction Controls")
-    col_a, col_b = st.columns(2)
-    with col_a:
-        if st.button("💣  Clear All Transactions"):
-            st.session_state.transactions.clear()
-            st.success("All transactions cleared.")
-    with col_b:
-        if st.button("🧾 View Logged Transactions"):
-            st.dataframe(df.sort_values(by="date", ascending=False))
+    with st.expander("🧾 Logged Transactions", expanded=False):
+        for i, row in df.sort_values(by="date", ascending=False).iterrows():
+            col_a, col_b, col_c, col_d = st.columns([2, 2, 2, 1])
+            col_a.write(row['date'].strftime('%Y-%m-%d'))
+            col_b.write(row['type'].capitalize())
+            col_c.write(f"${row['amount']:,.2f}")
+            if col_d.button("❌", key=f"del_{i}"):
+                st.session_state.transactions.pop(i)
+                st.experimental_rerun()
