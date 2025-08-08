@@ -15,14 +15,12 @@ st.set_page_config(page_title="TFSA Tracker", page_icon="🧮", layout="wide")
 st.markdown(
     """
     <style>
-      /* Tighter top spacing */
-      .block-container { padding-top: .6rem !important; padding-bottom: 3rem !important; }
-
+      /* Tighter top spacing & general polish */
+      .block-container { padding-top: .55rem !important; padding-bottom: 3rem !important; }
       h1, h2, h3 { letter-spacing: .2px; }
-
       .small-muted { opacity:.8; font-size:.9rem; }
 
-      /* Chips for annual limits */
+      /* Annual limit "chips" */
       .chip {
         display:inline-block; padding:.18rem .55rem; border-radius:12px;
         background:rgba(255,255,255,.06); margin:.12rem .25rem .12rem 0;
@@ -31,8 +29,8 @@ st.markdown(
       }
 
       /* Contribution room bar */
-      .room-wrap { margin: .25rem 0 .6rem 0; }
-      .room-label { display:flex; align-items:center; justify-content:space-between; margin-bottom:.25rem; }
+      .room-wrap { margin: .15rem 0 .5rem 0; }
+      .room-label { display:flex; align-items:center; justify-content:space-between; margin-bottom:.22rem; }
       .room-bar {
         position: relative; width: 100%; height: 14px; border-radius: 999px;
         background: rgba(255,255,255,.08); overflow:hidden;
@@ -45,40 +43,50 @@ st.markdown(
       }
       .room-fill.glow { box-shadow: 0 0 10px rgba(255,80,80,.55), 0 0 20px rgba(255,80,80,.35); }
 
-      /* Transaction FX (emoji) */
-      .fx {
-        position: fixed; z-index: 1000; font-size: 2.2rem; pointer-events: none;
-        opacity: 0; transform: translateY(12px) scale(.92);
-        animation: floatUp VAR_DURs ease-out forwards;
+      /* Transaction FX (emoji + bubble) */
+      .fxwrap {
+        position: fixed; z-index: 1000; right: 28px;
+        display: flex; align-items: center; gap: .5rem;
+        opacity: 0; transform: translateY(10px);
+        animation: fxIn VAR_DURs ease-out forwards;
+        pointer-events: none;
+      }
+      .fxemoji {
+        font-size: 2.15rem; line-height: 1;
         text-shadow: 0 0 8px rgba(255,255,255,.08);
       }
-      @keyframes floatUp {
-        0% { opacity:0; transform: translateY(14px) scale(.9); }
+      .fxbubble {
+        font-size: .92rem; padding: .35rem .55rem; border-radius: 10px;
+        border: 1px solid rgba(255,255,255,.08); background: rgba(255,255,255,.06);
+        font-variant-numeric: tabular-nums; white-space: nowrap;
+      }
+      @keyframes fxIn {
+        0% { opacity:0; transform: translateY(12px); }
         10% { opacity:1; }
         80% { opacity:1; }
-        100% { opacity:0; transform: translateY(-48px) scale(1); }
+        100% { opacity:0; transform: translateY(-44px); }
       }
 
-      /* Bomb & header row */
-      .right-action { display:flex; justify-content:flex-end; }
-      .bomb { border-radius: 12px; padding:.45rem .7rem; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.08); }
+      /* Bomb button look */
+      .bomb { border-radius: 12px; padding:.45rem .7rem;
+              background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.08); }
       .bomb:hover { background: rgba(255,255,255,.09); cursor:pointer; }
 
-      /* Slightly tighter expanders */
-      .stExpander > div > div { padding-top: .2rem; padding-bottom: .55rem; }
-
-      /* Prevent black-on-dark issues */
+      /* Streamlit dark text fix */
       .stMarkdown, .stMarkdown p, .stMarkdown span { color: inherit !important; }
+
+      /* Tighter expanders a bit */
+      .stExpander > div > div { padding-top: .2rem; padding-bottom: .55rem; }
     </style>
-    """.replace("VAR_DUR", "1.8"),
+    """.replace("VAR_DUR", "2.2"),
     unsafe_allow_html=True,
 )
 
 # -------------------------
-# Compat wrappers / helpers
+# Back-compat helper
 # -------------------------
 def columns_va(spec, vertical_alignment="center"):
-    """Back-compat for Streamlit versions without vertical_alignment."""
+    """Use vertical_alignment when available; otherwise fall back."""
     try:
         return st.columns(spec, vertical_alignment=vertical_alignment)
     except TypeError:
@@ -89,16 +97,16 @@ def columns_va(spec, vertical_alignment="center"):
 # -------------------------
 def init_state():
     defaults = {
-        "transactions": [],           # list of dicts with id, date, type, amount
+        "transactions": [],           # list of {id, date, type, amount}
         "next_id": 1,                 # autoincrement id
         "confirming_clear": False,    # for the clear-all confirmation UI
         "ever_contributed": "No",     # estimator radio
         "carryover_manual": 0.0,      # manual carryover if Yes
         "amount_input": 0.0,          # form amount
         "type_input": "deposit",      # form type
-        "prefs": {"emoji_fx": True, "fx_duration": 1.8},  # effects settings
-        "fx_queue": [],               # stacked floating emoji
-        "clear_click_guard": False,   # prevent double-submits on clear-all
+        "prefs": {"emoji_fx": True, "fx_duration": 2.2},  # effects settings
+        "fx_queue": [],               # stacked floating notifications
+        "clear_click_guard": False,   # prevent double click on confirm
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -106,13 +114,32 @@ def init_state():
 init_state()
 
 # Sync CSS animation duration to slider value on every run
-dur_css = float(st.session_state.prefs.get("fx_duration", 1.8))
-st.markdown(f"<style>.fx {{ animation-duration: {dur_css:.2f}s !important; }}</style>", unsafe_allow_html=True)
+dur_css = float(st.session_state.prefs.get("fx_duration", 2.2))
+st.markdown(f"<style>.fxwrap {{ animation-duration: {dur_css:.2f}s !important; }}</style>", unsafe_allow_html=True)
 
-def trigger_fx(emoji: str):
-    """Queue a floating emoji effect."""
-    if st.session_state.prefs.get("emoji_fx", True):
-        st.session_state.fx_queue.append({"emoji": emoji, "ts": time.time()})
+def queue_fx(emoji: str, text: str, tone: str = "neutral"):
+    """Queue a floating emoji + bubble message."""
+    if not st.session_state.prefs.get("emoji_fx", True):
+        return
+    # tone colors
+    if tone == "pos":
+        border = "rgba(34,197,94,.35)"   # green
+        bg = "rgba(34,197,94,.12)"
+        color = "#22c55e"
+    elif tone == "neg":
+        border = "rgba(239,68,68,.35)"   # red
+        bg = "rgba(239,68,68,.12)"
+        color = "#ef4444"
+    else:
+        border = "rgba(255,255,255,.25)"
+        bg = "rgba(255,255,255,.08)"
+        color = "inherit"
+    st.session_state.fx_queue.append({
+        "emoji": emoji,
+        "text": text,
+        "style": f"color:{color};background:{bg};border:1px solid {border};",
+        "ts": time.time()
+    })
 
 # -------------------------
 # Constants / Helpers
@@ -153,8 +180,8 @@ def current_year_deposits(df: pd.DataFrame, year: int) -> float:
 def lifetime_balance(df: pd.DataFrame) -> float:
     if df.empty:
         return 0.0
-    deposits = float(df.loc[df["type"] == "deposit", "amount"].sum()) if "type" in df else 0.0
-    withdrawals = float(df.loc[df["type"] == "withdrawal", "amount"].sum()) if "type" in df else 0.0
+    deposits = float(df.loc[df["type"] == "deposit", "amount"].sum())
+    withdrawals = float(df.loc[df["type"] == "withdrawal", "amount"].sum())
     return deposits - withdrawals
 
 # =========================
@@ -163,7 +190,7 @@ def lifetime_balance(df: pd.DataFrame) -> float:
 st.title("TFSA Contribution Tracker")
 current_year = datetime.now().year
 
-# --- Estimator Header / Explainer ---
+# --- Explainer ---
 with st.expander("ℹ️ How TFSA contribution room works", expanded=False):
     st.markdown(
         """
@@ -179,22 +206,23 @@ with st.expander("ℹ️ How TFSA contribution room works", expanded=False):
     chip_html = " ".join(f"<span class='chip'>{y} ${LIMITS_BY_YEAR[y]:,}</span>" for y in chip_years)
     st.markdown(chip_html, unsafe_allow_html=True)
 
-# --- Settings / Effects (collapsed by default) ---
-with st.expander("⚙️ Settings (effects panel)", expanded=False):
-    st.caption("Toggle the floating emoji effects and tweak their duration.")
+# --- Settings (collapsed; clearly a settings panel) ---
+with st.expander("🎛 Display & Effects (Settings)", expanded=False):
+    st.caption("Toggle the floating emoji notifications and tune their duration.")
     left, right = st.columns(2)
     with left:
         st.session_state.prefs["emoji_fx"] = st.checkbox(
-            "Show emoji effects on transactions",
+            "Show emoji notifications when adding transactions",
             value=st.session_state.prefs.get("emoji_fx", True),
         )
     with right:
         new_dur = st.slider(
-            "Emoji effect duration (seconds)",
-            0.8, 3.0, float(st.session_state.prefs.get("fx_duration", 1.8)), 0.1
+            "Notification duration (seconds)",
+            0.8, 4.0, float(st.session_state.prefs.get("fx_duration", 2.2)), 0.1
         )
-        if new_dur != st.session_state.prefs.get("fx_duration", 1.8):
+        if new_dur != st.session_state.prefs.get("fx_duration", 2.2):
             st.session_state.prefs["fx_duration"] = float(new_dur)
+            # CSS duration is refreshed at top each run
 
 # --- Estimator / Input ---
 st.subheader("📅 Contribution Room Estimator")
@@ -209,12 +237,10 @@ with colB:
     )
 
 if st.session_state.ever_contributed == "No":
-    # If never contributed, your available room = sum of all years from start to current
     estimated_room_total = total_room_from_inception(dob, current_year)
     carryover_prior = estimated_room_total - current_year_limit(current_year)
     st.success(f"Estimated available room (all-time if you've truly never contributed): **${estimated_room_total:,.0f}**")
 else:
-    # If you *have* contributed, we need a manual carryover (until we add import)
     st.session_state.carryover_manual = st.number_input(
         "Enter your unused TFSA room carried into this year (best estimate):",
         min_value=0.0, step=500.0, value=float(st.session_state.carryover_manual)
@@ -256,14 +282,13 @@ m1.metric("This year's limit", f"${current_year_limit(current_year):,.0f}")
 m2.metric("Carryover into this year", f"${carryover_prior:,.0f}")
 m3.metric("Room left (est.)", f"${room_left:,.0f}")
 
-# === Always-on room summary panel ===
+# A clean “this year” breakdown always visible
 def _status_color(p):
     if p < 60: return "#22c55e"   # green
     if p < 80: return "#eab308"   # yellow
     if p < 95: return "#f97316"   # orange
     return "#ef4444"              # red
 
-# Total room this year (consistent with estimator logic)
 total_room_this_year = (
     (carryover_prior + current_year_limit(current_year))
     if st.session_state.ever_contributed == "Yes"
@@ -273,14 +298,14 @@ total_room_this_year = (
     )
 )
 pct_used = (deposits_ytd / total_room_this_year * 100.0) if total_room_this_year > 0 else 0.0
-colchip = _status_color(pct_used)
+chip_color = _status_color(pct_used)
 
 with st.container(border=True):
     st.markdown(
         f"""
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem;">
           <div style="font-weight:700;">This year’s room breakdown</div>
-          <div style="padding:.15rem .5rem;border-radius:999px;background:{colchip}26;border:1px solid {colchip}44;color:{colchip};font-weight:700;">
+          <div style="padding:.15rem .5rem;border-radius:999px;background:{chip_color}26;border:1px solid {chip_color}44;color:{chip_color};font-weight:700;">
             Used {pct_used:.1f}% • Left ${room_left:,.0f}
           </div>
         </div>
@@ -291,24 +316,6 @@ with st.container(border=True):
     c1s.metric("Total room (carryover + limit)", f"${total_room_this_year:,.0f}")
     c2s.metric("Deposits YTD", f"${deposits_ytd:,.0f}")
     c3s.metric("Remaining (est.)", f"${room_left:,.0f}")
-
-    with st.expander("What if I deposit an amount today?", expanded=False):
-        preview_amt = st.number_input("Preview deposit amount", min_value=0.0, step=100.0, value=0.0, key="preview_deposit")
-        if preview_amt > 0:
-            remaining_now = max(0.0, total_room_this_year - deposits_ytd)
-            if preview_amt > remaining_now:
-                st.error(f"That would exceed your estimated remaining room by ${preview_amt - remaining_now:,.0f}.")
-            else:
-                new_used = deposits_ytd + preview_amt
-                new_pct = (new_used / total_room_this_year * 100.0) if total_room_this_year > 0 else 0.0
-                new_left = max(0.0, total_room_this_year - new_used)
-                new_col = _status_color(new_pct)
-                st.markdown(
-                    f"<div style='margin-top:.25rem;padding:.4rem .6rem;border-radius:.5rem;background:{new_col}1A;border:1px solid {new_col}55;'>"
-                    f"After a ${preview_amt:,.0f} deposit: <b>Used {new_pct:.1f}%</b> • <b>Left ${new_left:,.0f}</b>"
-                    f"</div>",
-                    unsafe_allow_html=True
-                )
 
 # =========================
 # --- Add a Transaction ---
@@ -334,7 +341,7 @@ with st.form("txn_form", clear_on_submit=False):
             st.error("Please enter an amount greater than $0.")
         else:
             if st.session_state.type_input == "deposit":
-                # Deposit can't exceed available room for the deposit's calendar year
+                # Validate room for the deposit's year
                 deposit_year = t_date.year
                 deposits_that_year = current_year_deposits(df_all, deposit_year)
                 year_limit = current_year_limit(deposit_year)
@@ -342,12 +349,12 @@ with st.form("txn_form", clear_on_submit=False):
                     base_carry = carryover_prior if st.session_state.ever_contributed == "No" else st.session_state.carryover_manual
                     allowed_room = max(0.0, base_carry + year_limit - deposits_that_year)
                 else:
-                    # For past years, conservative: only that year's limit
                     allowed_room = max(0.0, year_limit - deposits_that_year)
 
                 if t_amount > allowed_room:
                     st.error(f"❌ Deposit exceeds available contribution room for {deposit_year}. Available: ${allowed_room:,.0f}.")
                 else:
+                    # Add deposit
                     st.session_state.transactions.append({
                         "id": st.session_state.next_id,
                         "date": t_date.strftime("%Y-%m-%d"),
@@ -356,14 +363,22 @@ with st.form("txn_form", clear_on_submit=False):
                     })
                     st.session_state.next_id += 1
                     st.session_state.amount_input = 0.0
-                    trigger_fx("💰")  # money bag for deposit
+
+                    # Build updated status (for current year)
+                    df2 = df_from_txns(st.session_state.transactions)
+                    dep2 = current_year_deposits(df2, current_year)
+                    room_left2 = max(0.0, estimated_room_total - dep2)
+                    pct2 = (dep2 / estimated_room_total * 100.0) if estimated_room_total > 0 else 0.0
+                    queue_fx("💰", f"+${t_amount:,.0f} • Used {pct2:.1f}% • Left ${room_left2:,.0f}", tone="pos")
+
                     st.stop()
             else:
-                # Withdrawal can't exceed balance
+                # Validate withdrawal vs balance
                 bal = lifetime_balance(df_all)
                 if t_amount > bal:
                     st.error(f"❌ Withdrawal exceeds available balance. Current balance: ${bal:,.0f}.")
                 else:
+                    # Add withdrawal
                     st.session_state.transactions.append({
                         "id": st.session_state.next_id,
                         "date": t_date.strftime("%Y-%m-%d"),
@@ -372,7 +387,12 @@ with st.form("txn_form", clear_on_submit=False):
                     })
                     st.session_state.next_id += 1
                     st.session_state.amount_input = 0.0
-                    trigger_fx("💸")  # flying money for withdrawal
+
+                    # Updated balance
+                    df2 = df_from_txns(st.session_state.transactions)
+                    bal2 = lifetime_balance(df2)
+                    queue_fx("💸", f"-${t_amount:,.0f} • Balance ${bal2:,.0f}", tone="neg")
+
                     st.stop()
 
 # =========================
@@ -462,7 +482,7 @@ else:
     )
     st.altair_chart(bar, use_container_width=True)
 
-    # The table is collapsible under the chart
+    # Data table collapsible under the chart
     with st.expander("Show data table", expanded=False):
         st.dataframe(
             monthly.style.format({
@@ -476,11 +496,19 @@ else:
 # --- Render stacked FX ---
 # =========================
 now = time.time()
-dur = float(st.session_state.prefs.get("fx_duration", 1.8))
-# keep only live effects
+dur = float(st.session_state.prefs.get("fx_duration", 2.2))
+# keep only live notifications
 st.session_state.fx_queue = [fx for fx in st.session_state.fx_queue if now - fx["ts"] < dur]
-# render last three, stacked so no UI jump
+# render last three stacked (top offsets so they don't jump)
 for i, fx in enumerate(st.session_state.fx_queue[-3:]):
-    top = 90 + (i * 18)
-    right = 30 + (i * 6)
-    st.markdown(f"<div class='fx' style='top:{top}px;right:{right}px'>{fx['emoji']}</div>", unsafe_allow_html=True)
+    top_px = 90 + (i * 22)
+    # wrapper with emoji + bubble
+    st.markdown(
+        f"""
+        <div class="fxwrap" style="top:{top_px}px;">
+          <div class="fxemoji">{fx['emoji']}</div>
+          <div class="fxbubble" style="{fx['style']}">{fx['text']}</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
