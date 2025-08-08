@@ -13,6 +13,14 @@ st.set_page_config(page_title="TFSA Tracker", page_icon="🧮", layout="wide")
 # Session Defaults
 # -------------------------
 def init_state():
+
+    # -- compat helper for older Streamlit builds (no vertical_alignment)
+def columns_va(spec, vertical_alignment="center"):
+    try:
+        return st.columns(spec, vertical_alignment=vertical_alignment)
+    except TypeError:  # older Streamlit
+        return st.columns(spec)
+        
     defaults = {
         "transactions": [],         # list of dicts with id, date, type, amount
         "next_id": 1,               # autoincrement id for transaction rows
