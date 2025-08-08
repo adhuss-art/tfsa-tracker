@@ -1,17 +1,19 @@
 # ----------------------------
 # Log a New Transaction
 # ----------------------------
+# Ensure estimated_room exists; default to 0 if not set
+estimated_room = st.session_state.get('estimated_room', 0)
 total_contribution_room = estimated_room
 
 st.subheader("➕ Add a Transaction")
 with st.form("transaction_form"):
     col1, col2, col3 = st.columns(3)
     with col1:
-        t_date = st.date_input("Transaction Date", value=datetime.today(), min_value=datetime(2009, 1, 1), max_value=datetime(current_year, 12, 31))
+        t_date = st.date_input("Transaction Date", value=datetime.today(), min_value=datetime(2009, 1, 1), max_value=datetime.now().replace(month=12, day=31))
     with col2:
         t_type = st.radio("Type", ["deposit", "withdrawal"], horizontal=True)
     with col3:
-        t_amount = st.number_input("Amount", min_value=0.0, step=100.0, value=st.session_state.amount_input, key='amount_input')
+        t_amount = st.number_input("Amount", min_value=0.0, step=100.0, value=st.session_state.get('amount_input', 0.0), key='amount_input')
     submitted = st.form_submit_button("Add Transaction")
 
     if submitted and t_amount > 0:
