@@ -21,13 +21,61 @@ def init_state():
         "carryover_manual": 0.0,    # manual carryover when ever_contributed == "Yes"
         "amount_input": 0.0,        # form inputs (helps reset)
         "type_input": "deposit",
-        "_flash_money": None,       # for floating badge
+        "_flash_money": None,       # for the floating badge
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
 
 init_state()
+
+# -------------------------
+# Altair dark theme
+# -------------------------
+alt.themes.enable('none')
+alt.data_transformers.disable_max_rows()
+
+def _alt_dark():
+    return {
+        "config": {
+            "background": "transparent",
+            "axis": {
+                "domainColor": "#9CA3AF",
+                "gridColor": "#374151",
+                "labelColor": "#E5E7EB",
+                "titleColor": "#E5E7EB"
+            },
+            "legend": {
+                "labelColor": "#E5E7EB",
+                "titleColor": "#E5E7EB"
+            },
+            "view": {"stroke": "transparent"}
+        }
+    }
+
+alt.themes.register('tfsa_dark', _alt_dark)
+alt.themes.enable('tfsa_dark')
+
+# -------------------------
+# CSS polish / spacing (dark-mode tuned)
+# -------------------------
+st.markdown("""
+<style>
+/* More breathing room so the H1 never clips */
+.block-container { padding-top: 2.6rem !important; padding-bottom: 2.25rem; }
+.block-container h1:first-child { margin-top: .25rem !important; }
+
+/* Dark-mode friendly neutrals */
+:root, body { color-scheme: dark; }
+.limits-inline { white-space: nowrap; }
+
+/* Metrics label tint */
+[data-testid="stMetricLabel"] { color: #9CA3AF; }
+
+/* Usage bar track (darker gray on dark bg) */
+.usage-track { background:#1f2937 !important; }
+</style>
+""", unsafe_allow_html=True)
 
 # -------------------------
 # Constants / Helpers
@@ -74,40 +122,12 @@ def lifetime_balance(df: pd.DataFrame) -> float:
     return deposits - withdrawals
 
 # -------------------------
-# Altair (dark theme)
+# Floating "money" badge (Option B)
 # -------------------------
-alt.themes.enable('none')
-alt.data_transformers.disable_max_rows()
-
-def alt_dark():
-    return {
-        "config": {
-            "background": "transparent",
-            "axis": {
-                "domainColor": "#9CA3AF",
-                "gridColor": "#374151",
-                "labelColor": "#E5E7EB",
-                "titleColor": "#E5E7EB"
-            },
-            "legend": {
-                "labelColor": "#E5E7EB",
-                "titleColor": "#E5E7EB"
-            },
-            "view": {"stroke": "transparent"}
-        }
-    }
-alt.themes.register('tfsa_dark', alt_dark)
-alt.themes.enable('tfsa_dark')
-
-# -------------------------
-# Floating money badge
-# -------------------------
-
 def trigger_money_badge(kind: str, text: str):
     """kind='deposit' or 'withdrawal'"""
     st.session_state["_flash_money"] = {"kind": kind, "text": text}
     st.rerun()
-
 
 def show_money_badge_if_any():
     """
@@ -139,51 +159,55 @@ def show_money_badge_if_any():
         </div>
         <script>
           const badge = document.getElementById('money-badge');
-          function padForMobile(){
+          function padForMobile(){{
             const isMobile = window.innerWidth < 500;
             badge.style.right = isMobile ? '12px' : '18px';
             badge.style.bottom = isMobile ? '12px' : '18px';
-          }
+          }}
           padForMobile(); window.addEventListener('resize', padForMobile);
           // animate in
-          setTimeout(()=>{ badge.style.opacity=1; badge.style.transform='translateY(0)'; }, 10);
+          setTimeout(()=>{{ badge.style.opacity=1; badge.style.transform='translateY(0)'; }}, 10);
           // hang then fade
-          setTimeout(()=>{ badge.style.opacity=0; badge.style.transform='translateY(10px)'; }, 2400);
-          setTimeout(()=>{ badge.remove && badge.remove(); }, 2800);
+          setTimeout(()=>{{ badge.style.opacity=0; badge.style.transform='translateY(10px)'; }}, 2400);
+          setTimeout(()=>{{ badge.remove && badge.remove(); }}, 2800);
         </script>
         """,
         height=80,  # non-zero so the iframe is rendered
     )
     st.session_state["_flash_money"] = None
 
-
 # -------------------------
-# CSS polish / spacing (dark-mode tuned)
+# Glowy usage bar (green → amber → red)
 # -------------------------
-st.markdown(
-    """
-    <style>
-    /* More breathing room so the H1 never clips */
-    .block-container { padding-top: 2.6rem !important; padding-bottom: 2.25rem; }
-    .block-container h1:first-child { margin-top: .25rem !important; }
+def usage_bar(used: float, total: float, label: str = "Room used"):
+    pct = 0.0 if total <= 0 else min(100.0, max(0.0, used / total * 100.0))
+    # Colors: 0-60 green, 60-85 amber, 85-100 red with glow
+    if pct < 60:
+        color, glow = "#16a34a", "none"         # green
+    elif pct < 85:
+        color, glow = "#f59e0b", "none"         # amber
+    else:
+        color, glow = "#ef4444", "0 0 18px rgba(239,68,68,0.45)"  # red + glow
 
-    /* Dark-mode friendly neutrals */
-    :root, body { color-scheme: dark; }
-    .limits-inline { white-space: nowrap; }
+    components.html(
+        f"""
+        <div style="margin: 6px 0 16px 0;">
+          <div style="display:flex; justify-content:space-between; font: 500 13px/1.3 ui-sans-serif,system-ui; color:#CBD5E1;">
+            <span>{label}</span>
+            <span>{pct:.1f}%</span>
+          </div>
+          <div class="usage-track" style="height:12px; background:#1f2937; border-radius:999px; overflow:hidden;">
+            <div style="height:100%; width:{pct}%; background:{color};
+                        box-shadow:{glow}; transition: width .25s ease; border-radius:999px;"></div>
+          </div>
+        </div>
+        """,
+        height=40
+    )
 
-    /* Metrics label tint */
-    [data-testid="stMetricLabel"] { color: #9CA3AF; }
-
-    /* Usage bar track (darker gray on dark bg) */
-    .usage-track { background:#1f2937 !important; }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-# -------------------------
-# ------- UI -------------
-# -------------------------
+# =========================
+# --------- UI ------------
+# =========================
 st.title("TFSA Contribution Tracker")
 show_money_badge_if_any()  # keep this right after the title
 
@@ -228,41 +252,13 @@ else:
     carryover_prior = st.session_state.carryover_manual
     st.info(f"Estimated total room available **this year** (carryover + {current_year} limit): **${estimated_room_total:,.0f}**")
 
-# --- Top Metrics ---
+# --- Top Metrics + Usage bar ---
 df_all = df_from_txns(st.session_state.transactions)
 deposits_ytd = current_year_deposits(df_all, current_year)
 room_used_pct = (deposits_ytd / estimated_room_total * 100.0) if estimated_room_total > 0 else 0.0
 room_left = max(0.0, estimated_room_total - deposits_ytd)
 
-# Usage bar (dark-mode styled)
-
-def usage_bar(used: float, total: float, label: str = "Room used"):
-    pct = 0.0 if total <= 0 else min(100.0, max(0.0, used / total * 100.0))
-    # Color logic: 0-60 green, 60-85 amber, 85-100 red with glow
-    if pct < 60:
-        color, glow = "#16a34a", "none"         # green
-    elif pct < 85:
-        color, glow = "#f59e0b", "none"         # amber
-    else:
-        color, glow = "#ef4444", "0 0 18px rgba(239,68,68,0.45)"  # red + glow
-
-    components.html(
-        f"""
-        <div style="margin: 6px 0 16px 0;">
-          <div style="display:flex; justify-content:space-between; font: 500 13px/1.3 ui-sans-serif,system-ui; color:#CBD5E1;">
-            <span>{label}</span>
-            <span>{pct:.1f}%</span>
-          </div>
-          <div class="usage-track" style="height:12px; background:#1f2937; border-radius:999px; overflow:hidden;">
-            <div style="height:100%; width:{pct}%; background:{color};
-                        box-shadow:{glow}; transition: width .25s ease; border-radius:999px;"></div>
-          </div>
-        </div>
-        """,
-        height=40
-    )
-
-usage_bar(deposits_ytd, estimated_room_total, label=f"Room used • Room left: ${room_left:,.0f}")
+usage_bar(deposits_ytd, estimated_room_total, label="Contribution room used")
 
 metric1, metric2, metric3 = st.columns(3)
 metric1.metric("This year's limit", f"${current_year_limit(current_year):,.0f}")
@@ -274,13 +270,16 @@ metric3.metric("Room left (est.)", f"${room_left:,.0f}")
 # =========================
 st.subheader("➕ Add a Transaction")
 
-# Form lives in a container so we can keep the transaction list right under it
 with st.form("txn_form", clear_on_submit=False):
     c1, c2 = st.columns([1, 1])
     with c1:
         t_date = st.date_input("Date", value=date.today(), min_value=date(2009, 1, 1), max_value=date.today())
     with c2:
-        st.session_state.type_input = st.radio("Type", ["deposit", "withdrawal"], index=(0 if st.session_state.type_input == "deposit" else 1), horizontal=True)
+        st.session_state.type_input = st.radio(
+            "Type", ["deposit", "withdrawal"],
+            index=(0 if st.session_state.type_input == "deposit" else 1),
+            horizontal=True
+        )
 
     t_amount = st.number_input("Amount", min_value=0.0, step=100.0, value=float(st.session_state.amount_input))
     submitted = st.form_submit_button("Add", type="primary", use_container_width=True)
@@ -288,17 +287,22 @@ with st.form("txn_form", clear_on_submit=False):
     if submitted:
         # Recompute df after any prior changes
         df_all = df_from_txns(st.session_state.transactions)
+
         # VALIDATIONS
         if t_amount <= 0:
             st.error("Please enter an amount greater than $0.")
         else:
             if st.session_state.type_input == "deposit":
+                # Deposit cannot exceed remaining contribution room for the deposit's calendar year
                 deposit_year = t_date.year
                 deposits_that_year = current_year_deposits(df_all, deposit_year)
                 year_limit = current_year_limit(deposit_year)
+
                 if deposit_year == current_year:
-                    allowed_room = max(0.0, estimated_room_total - deposits_that_year)
+                    # Current-year allowed room = carryover_prior + year_limit - deposits_ytd (conservative)
+                    allowed_room = max(0.0, carryover_prior + year_limit - deposits_that_year)
                 else:
+                    # For past years we don't model carryover; use annual limit (conservative)
                     allowed_room = max(0.0, year_limit - deposits_that_year)
 
                 if t_amount > allowed_room:
@@ -353,8 +357,9 @@ with st.expander(f"🧾 Logged transactions ({len(st.session_state.transactions)
                 c3.write(f"${row['amount']:,.2f}")
                 # Delete button for this row
                 if c4.button("✖️", key=f"del_{int(row['id'])}", help="Delete this transaction"):
-                    # Remove by ID
-                    st.session_state.transactions = [tx for tx in st.session_state.transactions if tx["id"] != int(row["id")]]
+                    st.session_state.transactions = [
+                        tx for tx in st.session_state.transactions if tx["id"] != int(row["id"])
+                    ]
                     st.rerun()
 
         # Clear-all with confirmation
@@ -380,24 +385,29 @@ with st.expander(f"🧾 Logged transactions ({len(st.session_state.transactions)
 # =========================
 # ------- Analytics -------
 # =========================
-st.subheader("📊 Monthly Summary & Bars")
+st.subheader("📊 Monthly Summary & Chart")
 
 df_all = df_from_txns(st.session_state.transactions)
 if df_all.empty:
     st.info("No data yet. Add a transaction to see summary and charts.")
 else:
-    # Current-year monthly summary
+    # Current-year monthly summary (guarantee both columns exist)
     df_curr = df_all[df_all["year"] == current_year].copy()
+
+    # Build month grid Jan..Dec of current year to keep the X-axis stable
+    month_index = pd.period_range(start=f"{current_year}-01", end=f"{current_year}-12", freq="M").astype(str)
     monthly = (
         df_curr.groupby(["month", "type"])["amount"]
         .sum()
         .unstack()
-        .reindex(columns=["deposit", "withdrawal"], fill_value=0.0)
+        .reindex(columns=["deposit", "withdrawal"], fill_value=0.0)  # ensure both columns exist
+        .reindex(index=month_index, fill_value=0.0)                   # ensure all months exist
         .fillna(0.0)
         .reset_index()
+        .rename(columns={"index": "month"})
     )
 
-    # Summary table
+    # Table
     st.dataframe(
         monthly.style.format({
             "deposit": "${:,.2f}",
@@ -406,26 +416,22 @@ else:
         use_container_width=True
     )
 
-    # Altair bar chart with intuitive colors (green deposits, red withdrawals)
-    if not monthly.empty:
-        chart_df = monthly.melt(id_vars=["month"], value_vars=["deposit", "withdrawal"], var_name="type", value_name="amount")
-        bar = (
-            alt.Chart(chart_df)
-            .mark_bar()
-            .encode(
-                x=alt.X("month:N", title="Month"),
-                y=alt.Y("amount:Q", title="Amount ($)"),
-                color=alt.Color(
-                    "type:N",
-                    title="Type",
-                    scale=alt.Scale(domain=["deposit", "withdrawal"], range=["#16a34a", "#ef4444"])  # green / red
-                ),
-                tooltip=["month:N", "type:N", alt.Tooltip("amount:Q", format=",.2f")]
-            )
-            .properties(height=320)
+    # Chart (Altair) with fixed colors: deposit=green, withdrawal=red
+    melted = monthly.melt(id_vars=["month"], value_vars=["deposit", "withdrawal"], var_name="type", value_name="amount")
+    bar = (
+        alt.Chart(melted)
+        .mark_bar()
+        .encode(
+            x=alt.X("month:N", title="Month", sort=month_index.tolist()),
+            y=alt.Y("amount:Q", title="Amount ($)"),
+            color=alt.Color(
+                "type:N", title="Type",
+                scale=alt.Scale(domain=["deposit", "withdrawal"], range=["#16a34a", "#ef4444"])
+            ),
+            tooltip=["month:N", "type:N", alt.Tooltip("amount:Q", title="Amount", format="$.2f")]
         )
-        st.altair_chart(bar, use_container_width=True)
-    else:
-        st.info("No current-year transactions for charting yet.")
+        .properties(height=260, use_container_width=True)
+    )
+    st.altair_chart(bar, use_container_width=True)
 
-# NOTE: Removed the contribution-room line chart to avoid confusion; the usage bar at the top already conveys this clearly in real time.
+# End of file
