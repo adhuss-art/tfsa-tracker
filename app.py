@@ -7,6 +7,7 @@ import streamlit.components.v1 as components
 # =========================
 # ---- App Configuration --
 # =========================
+
 st.set_page_config(page_title="TFSA Tracker", page_icon="🧮", layout="centered")
 
 # -------------------------
