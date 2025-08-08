@@ -9,28 +9,27 @@ import time
 # =========================
 st.set_page_config(page_title="TFSA Tracker", page_icon="🧮", layout="centered")
 
-# Trim the top gap a bit + styling
+# Tighten top spacing + custom styles
 st.markdown("""
 <style>
-/* tighten top spacing under title */
 section[data-testid="stHeader"] { height: 56px; }
-main .block-container { padding-top: 1.2rem; }
+main .block-container { padding-top: 1.05rem; }
 
-/* contribution bar look */
-.room-wrap { position: relative; margin: .35rem 0 1.1rem 0; }
+/* Contribution meter */
+.room-wrap { position: relative; margin: .15rem 0 .6rem 0; }
 .room-track {
   width: 100%; height: 14px; border-radius: 999px;
-  background: linear-gradient(90deg,#1f2937 0%, #111827 100%); opacity:.9;
+  background: linear-gradient(90deg,#1f2937 0%, #0b1220 100%); opacity:.9;
 }
 .room-fill {
   position:absolute; top:0; left:0; height:14px; border-radius:999px;
-  background: linear-gradient(90deg, #22c55e 0%, #84cc16 50%, #f59e0b 75%, #ef4444 100%);
+  background: linear-gradient(90deg, #22c55e 0%, #84cc16 55%, #f59e0b 80%, #ef4444 100%);
   box-shadow: 0 0 10px rgba(239,68,68,0.0);
   transition: width .35s ease;
 }
-.room-fill.glow { box-shadow: 0 0 16px rgba(239,68,68,.45); }
+.room-fill.glow { box-shadow: 0 0 16px rgba(239,68,68,.55); }
 
-/* button emoji burst */
+/* Button emoji burst (always shows near the Add button) */
 .fx-wrap { position: relative; display:inline-block; }
 .fx-emoji {
   position: absolute; right: -8px; top: -6px;
@@ -40,17 +39,26 @@ main .block-container { padding-top: 1.2rem; }
   z-index: 9999;
 }
 @keyframes fx-pop {
-  0%   { transform: translate(8px, 6px) scale(.6); opacity: 0; }
+  0%   { transform: translate(8px, 6px) scale(.55); opacity: 0; }
   20%  { transform: translate(0px, 0px) scale(1.15); opacity: 1; }
-  60%  { transform: translate(-2px, -10px) scale(1); opacity: 1; }
+  60%  { transform: translate(-2px, -10px) scale(1.0); opacity: 1; }
   100% { transform: translate(-2px, -26px) scale(.9); opacity: 0; }
 }
 
-/* compact expander headers */
-div[data-testid="stExpander"] > details > summary { padding: .65rem 1rem; }
+/* Compact expander headers */
+div[data-testid="stExpander"] > details > summary { padding: .55rem .9rem; }
 
-/* right-aligned bomb button hover */
+/* Right-aligned bomb button */
 .bomb-btn { text-align:right; }
+
+/* Help text readability in dark mode */
+small, .helptext { color: rgba(255,255,255,.65); }
+
+/* Reduce top gap between title and first expander */
+h1 + div[data-testid="stExpander"] { margin-top: .35rem; }
+
+/* Altair tooltip font */
+.vega-tooltip { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; font-size: 12px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -59,18 +67,20 @@ div[data-testid="stExpander"] > details > summary { padding: .65rem 1rem; }
 # -------------------------
 def init_state():
     defaults = {
-        "transactions": [],         # list of dicts with id, date, type, amount
-        "next_id": 1,               # autoincrement id for transaction rows
-        "confirming_clear": False,  # clear-all confirmation UI
-        "ever_contributed": "No",   # default for estimator
-        "carryover_manual": 0.0,    # manual carryover when ever_contributed == "Yes"
-        "amount_input": 0.0,        # form input
+        "transactions": [],         # list of {id, date, type, amount}
+        "next_id": 1,
+        "confirming_clear": False,  # for the clear-all confirmation UI
+        "ever_contributed": "No",
+        "carryover_manual": 0.0,
+        "amount_input": 0.0,
         "type_input": "deposit",
         "log_open": True,           # keep transactions expander open
-        # emoji burst
+        # emoji burst state
         "fx_burst_counter": 0,
         "fx_burst_until": 0.0,
         "fx_burst_emoji": "💰",
+        # advanced checks toggle
+        "adv_checks": False,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -110,8 +120,13 @@ def df_from_txns(txns: list) -> pd.DataFrame:
 def current_year_deposits(df: pd.DataFrame, year: int) -> float:
     if df.empty:
         return 0.0
-    filt = (df["year"] == year) & (df["type"] == "deposit")
+    filt = (df["type"] == "deposit") & (df["year"] == year)
     return float(df.loc[filt, "amount"].sum())
+
+def all_deposits_any_year(df: pd.DataFrame) -> float:
+    if df.empty:
+        return 0.0
+    return float(df.loc[df["type"] == "deposit", "amount"].sum())
 
 def lifetime_balance(df: pd.DataFrame) -> float:
     if df.empty:
@@ -132,7 +147,7 @@ st.title("TFSA Contribution Tracker")
 
 current_year = datetime.now().year
 
-# --- Estimator Header / Explainer ---
+# --- Explainer ---
 with st.expander("ℹ️ How TFSA contribution room works", expanded=False):
     st.markdown(
         """
@@ -146,14 +161,18 @@ with st.expander("ℹ️ How TFSA contribution room works", expanded=False):
         """
     )
 
-# --- Estimator / Input ---
+# --- Estimator ---
 st.subheader("📅 Contribution Room Estimator")
 
 colA, colB = st.columns([1, 1])
 with colA:
     dob = st.date_input("Your date of birth", value=date(1990, 1, 1), min_value=date(1900, 1, 1), max_value=date.today())
 with colB:
-    st.session_state.ever_contributed = st.radio("Have you ever contributed to a TFSA before?", ["No", "Yes"], index=(0 if st.session_state.ever_contributed == "No" else 1))
+    st.session_state.ever_contributed = st.radio(
+        "Have you ever contributed to a TFSA before?",
+        ["No", "Yes"],
+        index=(0 if st.session_state.ever_contributed == "No" else 1)
+    )
 
 if st.session_state.ever_contributed == "No":
     estimated_room_total = total_room_from_inception(dob, current_year)
@@ -168,11 +187,13 @@ else:
     carryover_prior = st.session_state.carryover_manual
     st.info(f"Estimated total room available **this year** (carryover + {current_year} limit): **${estimated_room_total:,.0f}**")
 
-# --- Top Metrics + Meter ---
+# --- Top Meter + Metrics ---
 df_all = df_from_txns(st.session_state.transactions)
-deposits_ytd = current_year_deposits(df_all, current_year)
-room_used_pct = (deposits_ytd / estimated_room_total * 100.0) if estimated_room_total > 0 else 0.0
-room_left = max(0.0, estimated_room_total - deposits_ytd)
+
+# "What can I contribute right now?" logic — count ALL deposits logged so far
+deposits_counted_now = all_deposits_any_year(df_all)
+room_used_pct = (deposits_counted_now / estimated_room_total * 100.0) if estimated_room_total > 0 else 0.0
+room_left = max(0.0, estimated_room_total - deposits_counted_now)
 
 st.write("**Contribution room used**")
 st.markdown('<div class="room-wrap"><div class="room-track"></div>', unsafe_allow_html=True)
@@ -186,6 +207,16 @@ m1.metric("This year's limit", f"${current_year_limit(current_year):,.0f}")
 m2.metric("Carryover into this year", f"${carryover_prior:,.0f}")
 m3.metric("Room left (est.)", f"${room_left:,.0f}")
 
+# Advanced checks (optional, info-only)
+with st.expander("⚙️ Advanced checks (optional)", expanded=False):
+    st.session_state.adv_checks = st.checkbox("Show inception-cap warning", value=st.session_state.adv_checks,
+                                              help="Adds a soft warning if lifetime deposits exceed total TFSA room from your DOB to the current year.")
+    if st.session_state.adv_checks:
+        inception_cap = total_room_from_inception(dob, current_year)
+        lifetime_deposits = all_deposits_any_year(df_all)
+        if lifetime_deposits > inception_cap:
+            st.warning(f"Lifetime deposits (${lifetime_deposits:,.0f}) exceed estimated inception room (${inception_cap:,.0f}). Consider double-checking with CRA.")
+
 # =========================
 # --- Add a Transaction ---
 # =========================
@@ -193,38 +224,52 @@ st.subheader("➕ Add a Transaction")
 with st.form("txn_form", clear_on_submit=False):
     c1, c2 = st.columns([1, 1])
     with c1:
-        t_date = st.date_input("Date", value=date.today(), min_value=date(2009, 1, 1), max_value=date.today())
+        t_date = st.date_input(
+            "Date",
+            value=date.today(),
+            min_value=date(2009, 1, 1),
+            max_value=date.today()
+        )
+        st.caption(
+            f"Room checks use your **current-year available room** "
+            f"(carryover + {current_year} limit) **regardless of the date you pick**."
+        )
     with c2:
-        st.session_state.type_input = st.radio("Type", ["deposit", "withdrawal"], index=(0 if st.session_state.type_input == "deposit" else 1), horizontal=True)
+        st.session_state.type_input = st.radio(
+            "Type", ["deposit", "withdrawal"],
+            index=(0 if st.session_state.type_input == "deposit" else 1),
+            horizontal=True
+        )
 
     t_amount = st.number_input("Amount", min_value=0.0, step=100.0, value=float(st.session_state.amount_input))
 
-    # Emoji appears next to the Add button
+    # Emoji appears right beside the Add button
     btn_col1, _ = st.columns([1, 3])
     with btn_col1:
         st.markdown('<div class="fx-wrap">', unsafe_allow_html=True)
         submitted = st.form_submit_button("Add", type="primary", use_container_width=True)
-        fx_anchor = st.empty()  # placeholder for emoji burst
+        fx_anchor = st.empty()  # emoji anchor
         st.markdown('</div>', unsafe_allow_html=True)
 
     if submitted:
-        # Recompute df after any prior changes
         df_all = df_from_txns(st.session_state.transactions)
 
         if t_amount <= 0:
             st.error("Please enter an amount greater than $0.")
         else:
             if st.session_state.type_input == "deposit":
-                deposit_year = t_date.year
-                deposits_that_year = current_year_deposits(df_all, deposit_year)
-                year_limit = current_year_limit(deposit_year)
-                if deposit_year == current_year:
-                    allowed_room = max(0.0, (carryover_prior if st.session_state.ever_contributed == "Yes" else (total_room_from_inception(dob, current_year) - total_room_from_inception(dob, current_year - 1) if current_year > 2009 else 0)) + year_limit - deposits_that_year)
-                else:
-                    allowed_room = max(0.0, year_limit - deposits_that_year)
+                # Hard check (now logic): carryover + this-year limit − ALL deposits already logged
+                deposits_now = all_deposits_any_year(df_all)
+                allow_now = max(0.0, (carryover_prior + current_year_limit(current_year)) - deposits_now)
 
-                if t_amount > allowed_room:
-                    st.error(f"❌ Deposit exceeds available contribution room for {deposit_year}. Available: ${allowed_room:,.0f}.")
+                # Soft nudge if amount exceeds current-year limit alone but still allowed due to carryover
+                if t_amount > current_year_limit(current_year) and t_amount <= allow_now:
+                    st.info(f"Over the {current_year} annual limit (${current_year_limit(current_year):,.0f}), "
+                            "but allowed because you have carryover.")
+
+                if t_amount > allow_now:
+                    st.error(f"❌ Deposit exceeds your available contribution room for {current_year}. "
+                             f"Available now: ${allow_now:,.0f}.")
                 else:
                     st.session_state.transactions.append({
                         "id": st.session_state.next_id,
@@ -254,14 +299,15 @@ with st.form("txn_form", clear_on_submit=False):
                     trigger_burst("💸")  # withdrawal emoji
                     st.rerun()
 
-# Render the emoji burst during the short “alive” window on rerun
-if time.time() < float(st.session_state.fx_burst_until):
-    fx_anchor.markdown(
-        f'<div class="fx-emoji" key="{st.session_state.fx_burst_counter}">{st.session_state.fx_burst_emoji}</div>',
-        unsafe_allow_html=True
-    )
-else:
-    fx_anchor.empty()
+# Render the emoji burst during its short “alive” window on rerun
+if "fx_anchor" in locals():
+    if time.time() < float(st.session_state.fx_burst_until):
+        fx_anchor.markdown(
+            f'<div class="fx-emoji" key="{st.session_state.fx_burst_counter}">{st.session_state.fx_burst_emoji}</div>',
+            unsafe_allow_html=True
+        )
+    else:
+        fx_anchor.empty()
 
 # =========================
 # --- Logged Transactions ---
@@ -312,7 +358,7 @@ with st.expander(f"Show transactions ({len(st.session_state.transactions)})", ex
                 c3.write(f"${row['amount']:,.2f}")
                 if c4.button("✖️", key=f"del_{int(row['id'])}", help="Delete this transaction"):
                     st.session_state.transactions = [tx for tx in st.session_state.transactions if tx["id"] != int(row["id"])]
-                    st.session_state.log_open = True
+                    st.session_state.log_open = True  # keep expander open
                     st.rerun()
 
 # =========================
@@ -333,19 +379,11 @@ else:
         .reset_index()
     )
 
-    # Room math (deposits consume room; withdrawals don't restore in-year)
-    deposits_ytd = float(monthly["deposit"].sum()) if not monthly.empty else 0.0
-    if st.session_state.ever_contributed == "Yes":
-        total_room_this_year = carryover_prior + current_year_limit(current_year)
-    else:
-        prior = total_room_from_inception(dob, current_year - 1) if current_year > 2009 else 0
-        total_room_this_year = (total_room_from_inception(dob, current_year) - prior) + 0  # no manual carryover for never-contributed
-
+    # Info series for current-year only (descriptive)
     monthly["net_contribution"] = monthly["deposit"]
     monthly["cumulative_contribution"] = monthly["deposit"].cumsum()
-    monthly["room_left"] = (total_room_this_year - monthly["cumulative_contribution"]).clip(lower=0.0)
 
-    # Chart (green deposits, red withdrawals)
+    # Chart: green deposits vs red withdrawals
     chart_df = monthly.melt(id_vars="month", value_vars=["deposit", "withdrawal"], var_name="type", value_name="amount")
     color_scale = alt.Scale(domain=["deposit", "withdrawal"], range=["#22c55e", "#ef4444"])
 
@@ -365,7 +403,6 @@ else:
                 "withdrawal": "${:,.2f}",
                 "net_contribution": "${:,.2f}",
                 "cumulative_contribution": "${:,.2f}",
-                "room_left": "${:,.2f}",
             }),
             use_container_width=True
         )
