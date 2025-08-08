@@ -7,6 +7,8 @@ from datetime import datetime
 # ----------------------------
 if 'transactions' not in st.session_state:
     st.session_state.transactions = []
+if 'amount_input' not in st.session_state:
+    st.session_state.amount_input = 0.0
 
 # Function to reset transactions when key info changes
 def reset_transactions():
@@ -91,7 +93,7 @@ with st.form("transaction_form"):
                 st.toast("Deposit added!", icon="💸")
             elif t_type == "withdrawal":
                 st.toast("Withdrawal added!", icon="🔻")
-            st.session_state.amount_input = 0.0  # reset amount after entry
+            st.session_state['amount_input'] = 0.0
 
 # ----------------------------
 # Display & Summary
@@ -99,7 +101,6 @@ with st.form("transaction_form"):
 if st.session_state.transactions:
     df = pd.DataFrame(st.session_state.transactions)
     df["date"] = pd.to_datetime(df["date"])
-    monthly = df[df["year"] == current_year] if 'year' in df else df
     monthly_totals = df.groupby(["type"])["amount"].sum().to_dict()
     total_deposits = monthly_totals.get("deposit", 0)
     contribution_percent = min(100, int((total_deposits / total_contribution_room) * 100))
@@ -116,4 +117,3 @@ if st.session_state.transactions:
     st.markdown(f"<strong>{contribution_percent}% of your contribution room used</strong>")
     remaining_room_val = total_contribution_room - total_deposits
     st.markdown(f"<div style='color:{'#2e7d32' if contribution_percent < 90 else '#d32f2f'}; font-weight:bold;'>💡 You have ${remaining_room_val:,.2f} in room remaining.</div>", unsafe_allow_html=True)
-
