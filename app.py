@@ -1,28 +1,36 @@
-import streamlit as st
-import streamlit.components.v1 as components
-import pandas as pd
-import altair as alt
+# app.py
+import time
 from datetime import datetime, date
 
-# =========================
-# ---- App Configuration --
-# =========================
-st.set_page_config(page_title="TFSA Tracker", page_icon="🧮", layout="centered")
+import pandas as pd
+import streamlit as st
+import altair as alt
+import streamlit.components.v1 as components
 
-# -------------------------
-# Session Defaults
-# -------------------------
+# =============================================================================
+# Page setup
+# =============================================================================
+st.set_page_config(
+    page_title="TFSA Contribution Tracker",
+    page_icon="🧮",
+    layout="centered",
+    initial_sidebar_state="collapsed",
+)
+
+# =============================================================================
+# Session state
+# =============================================================================
 def init_state():
     defaults = {
-        "transactions": [],         # list of dicts with id, date, type, amount
-        "next_id": 1,               # autoincrement id for transaction rows
-        "confirming_clear": False,  # for the clear-all confirmation UI
-        "ever_contributed": "No",   # default for estimator
-        "carryover_manual": 0.0,    # manual carryover when ever_contributed == "Yes"
-        "amount_input": 0.0,        # form inputs (helps reset)
+        "transactions": [],
+        "next_id": 1,
+        "ever_contributed": "No",
+        "carryover_manual": 0.0,
+        "amount_input": 0.0,
         "type_input": "deposit",
-        "_flash_money": None,       # for the floating badge payload
-        "_flash_duration_ms": 6000, # how long the badge stays visible
+        "confirming_clear": False,
+        "notifications": [],
+        "last_fx": None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -30,65 +38,9 @@ def init_state():
 
 init_state()
 
-# -------------------------
-# Altair dark theme
-# -------------------------
-alt.themes.enable('none')
-alt.data_transformers.disable_max_rows()
-
-def _alt_dark():
-    return {
-        "config": {
-            "background": "transparent",
-            "axis": {
-                "domainColor": "#9CA3AF",
-                "gridColor": "#374151",
-                "labelColor": "#E5E7EB",
-                "titleColor": "#E5E7EB"
-            },
-            "legend": {
-                "labelColor": "#E5E7EB",
-                "titleColor": "#E5E7EB"
-            },
-            "view": {"stroke": "transparent"}
-        }
-    }
-
-alt.themes.register('tfsa_dark', _alt_dark)
-alt.themes.enable('tfsa_dark')
-
-# -------------------------
-# CSS polish / spacing (dark-mode tuned, tighter title-to-expander gap)
-# -------------------------
-st.markdown("""
-<style>
-/* Reduce top padding so title sits higher (still not clipped under toolbar) */
-.block-container { padding-top: 1.6rem !important; padding-bottom: 2.25rem; }
-.block-container h1:first-child { margin-top: .2rem !important; margin-bottom: .5rem !important; }
-
-/* Tighten the gap before the first expander after the title */
-.block-container h1 + div[data-testid="stExpander"] {
-    margin-top: 0.25rem !important;
-}
-
-/* Dark-mode friendly neutrals */
-:root, body { color-scheme: dark; }
-.limits-inline { white-space: nowrap; }
-
-/* Metric label tint */
-[data-testid="stMetricLabel"] { color: #9CA3AF; }
-
-/* Usage bar track (darker gray on dark bg) */
-.usage-track { background:#1f2937 !important; }
-
-/* Reduce vertical gaps a bit globally */
-section.main > div.block-container > div { margin-top: .25rem; }
-</style>
-""", unsafe_allow_html=True)
-
-# -------------------------
-# Constants / Helpers
-# -------------------------
+# =============================================================================
+# Constants & helpers
+# =============================================================================
 LIMITS_BY_YEAR = {
     2009: 5000, 2010: 5000, 2011: 5000, 2012: 5000, 2013: 5500,
     2014: 5500, 2015: 10000, 2016: 5500, 2017: 5500, 2018: 5500,
@@ -97,7 +49,6 @@ LIMITS_BY_YEAR = {
 }
 
 def tfsa_start_year_from_dob(dob: date) -> int:
-    # TFSA starts at the later of 2009 or the year you turn 18
     return max(dob.year + 18, 2009)
 
 def total_room_from_inception(dob: date, through_year: int) -> float:
@@ -123,159 +74,153 @@ def current_year_deposits(df: pd.DataFrame, year: int) -> float:
     return float(df.loc[filt, "amount"].sum())
 
 def lifetime_balance(df: pd.DataFrame) -> float:
-    # "Available cash" / balance inside the app: deposits - withdrawals, all time
     if df.empty:
         return 0.0
-    deposits = float(df.loc[df["type"] == "deposit", "amount"].sum()) if "type" in df else 0.0
-    withdrawals = float(df.loc[df["type"] == "withdrawal", "amount"].sum()) if "type" in df else 0.0
+    deposits = float(df.loc[df["type"] == "deposit", "amount"].sum())
+    withdrawals = float(df.loc[df["type"] == "withdrawal", "amount"].sum())
     return deposits - withdrawals
 
-# -------------------------
-# Floating "money" badge (Option B) — no extra rerun to avoid jump
-# -------------------------
-def trigger_money_badge(kind: str, text: str, duration_ms: int | None = None):
-    """kind='deposit' or 'withdrawal'"""
-    st.session_state["_flash_money"] = {
-        "kind": kind,
-        "text": text,
-        "duration": int(duration_ms or st.session_state.get("_flash_duration_ms", 6000)),
-    }
-    # Do NOT st.rerun() — form submit already reruns once.
+def push_notification(kind: str, text: str):
+    st.session_state.notifications.append((time.time(), kind, text))
+    st.session_state.notifications = st.session_state.notifications[-6:]
 
-def show_money_badge_if_any():
-    """
-    Renders a floating badge fixed to the viewport.
-    - Visible longer (default 6s)
-    - Pauses fade-out on hover
-    - Has a manual dismiss (×)
-    Keep this CALL right after st.title(...) so it's always in view.
-    """
-    data = st.session_state.get("_flash_money")
-    if not data:
+def emoji_fx(kind: str):
+    st.session_state.last_fx = (kind, time.time())
+
+# =============================================================================
+# Global CSS & small HTML helpers
+# =============================================================================
+def render_global_css():
+    components.html(
+        """
+        <style>
+        /* tighter top spacing + expander spacing */
+        section.main > div { padding-top: 0.6rem; }
+        h1 { margin-top: .2rem !important; margin-bottom: .2rem !important; }
+        details { margin-top: .35rem; }
+
+        /* notification stack */
+        .tfsa-notify-stack {
+          position: fixed; top: 76px; right: 24px; z-index: 9999;
+          display: flex; flex-direction: column; gap: 10px; pointer-events: none;
+        }
+        .tfsa-note {
+          min-width: 280px; max-width: 520px;
+          background: rgba(38,41,46,0.96); border: 1px solid rgba(255,255,255,0.06);
+          box-shadow: 0 8px 28px rgba(0,0,0,0.45);
+          border-radius: 12px; padding: 12px 14px; color: #eee;
+          display: grid; grid-template-columns: 26px 1fr; gap: 10px; align-items: center;
+          animation: tfsa-fade-slide 4s forwards ease-in-out; pointer-events: auto;
+        }
+        .tfsa-note.ok .icon { filter: drop-shadow(0 0 .5px #22c55e); }
+        .tfsa-note.warn .icon { filter: drop-shadow(0 0 .5px #eab308); }
+        .tfsa-note.err .icon { filter: drop-shadow(0 0 .5px #ef4444); }
+        .tfsa-note.deposit .icon { filter: drop-shadow(0 0 .5px #22c55e); }
+        .tfsa-note.withdrawal .icon { filter: drop-shadow(0 0 .5px #ef4444); }
+        @keyframes tfsa-fade-slide {
+          0% { opacity: 0; transform: translateY(-8px); }
+          8% { opacity: 1; transform: translateY(0); }
+          80% { opacity: 1; }
+          100% { opacity: 0; transform: translateY(-8px); }
+        }
+
+        /* floating emoji fx bottom-right */
+        .tfsa-fx {
+          position: fixed; right: 28px; bottom: 28px; z-index: 9998;
+          font-size: 28px; line-height: 1;
+          animation: tfsa-fx-rise 1.6s ease-out forwards; pointer-events: none;
+        }
+        @keyframes tfsa-fx-rise {
+          0% { opacity: 0; transform: translateY(10px) scale(.96); }
+          10% { opacity: 1; transform: translateY(0) scale(1); }
+          80% { opacity: 1; transform: translateY(-16px) scale(1); }
+          100% { opacity: 0; transform: translateY(-26px) scale(.98); }
+        }
+
+        /* contribution bar */
+        .tfsa-bar-wrap { width: 100%; margin: .1rem 0 .9rem 0; }
+        .tfsa-bar-track {
+          width: 100%; height: 14px; background: rgba(255,255,255,0.09);
+          border-radius: 999px; overflow: hidden; position: relative;
+        }
+        .tfsa-bar-fill { height: 100%; width: 0%; border-radius: 999px; transition: width .35s ease; }
+        .tfsa-bar-fill.green { background: linear-gradient(90deg,#16a34a,#22c55e); }
+        .tfsa-bar-fill.amber { background: linear-gradient(90deg,#d97706,#f59e0b); }
+        .tfsa-bar-fill.red {
+          background: linear-gradient(90deg,#ef4444,#f87171);
+          box-shadow: 0 0 10px rgba(239,68,68,.55), 0 0 20px rgba(239,68,68,.30);
+        }
+        .tfsa-bar-label {
+          position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+          font-size: 12px; color: #e5e7eb; opacity: .95;
+        }
+
+        /* limits chips (fix weird spacing, force tabular numerals) */
+        .tfsa-limits-row {
+          display: flex; flex-wrap: wrap; gap: 8px 10px; margin-top: 6px;
+        }
+        .tfsa-chip {
+          font-variant-numeric: tabular-nums;
+          letter-spacing: normal;
+          background: rgba(255,255,255,0.06);
+          border: 1px solid rgba(255,255,255,0.10);
+          border-radius: 999px;
+          padding: 6px 10px;
+          color: #e5e7eb;
+          white-space: nowrap;
+        }
+        .tfsa-chip .yr { opacity: .8; margin-right: 6px; }
+        .tfsa-chip .amt { font-weight: 700; }
+        </style>
+        """,
+        height=0,
+    )
+
+def render_notifications():
+    notes = st.session_state.notifications[-6:]
+    if not notes:
+        components.html("<div class='tfsa-notify-stack'></div>", height=0)
         return
+    icon_map = {"ok": "✅", "warn": "⚠️", "err": "⛔", "deposit": "💵", "withdrawal": "🔻"}
+    now = time.time()
+    parts = ["<div class='tfsa-notify-stack'>"]
+    for ts, kind, text in notes:
+        if now - ts <= 12:
+            parts.append(f"<div class='tfsa-note {kind}'><div class='icon'>{icon_map.get(kind,'ℹ️')}</div><div>{text}</div></div>")
+    parts.append("</div>")
+    components.html("".join(parts), height=0)
 
-    kind = data.get("kind", "deposit")
-    text = data.get("text", "Updated")
-    duration = int(data.get("duration", 6000))
+def render_fx():
+    fx = st.session_state.last_fx
+    if not fx:
+        return
+    kind, ts = fx
+    if time.time() - ts > 1.6:
+        return
+    components.html(f"<div class='tfsa-fx'>{'💵' if kind=='deposit' else '🔻'}</div>", height=0)
 
-    bg = "#16a34a" if kind == "deposit" else "#ef4444"  # green / red
-    emoji = "💵" if kind == "deposit" else "🔻"
-
+def render_limits_chips():
+    # highlights we want to show as chips
+    highlights = [2009, 2013, 2015, 2019, 2023, 2024, 2025]
+    chips = []
+    for y in highlights:
+        amt = f"${LIMITS_BY_YEAR[y]:,}"
+        chips.append(f"<span class='tfsa-chip'><span class='yr'>{y}</span><span class='amt'>{amt}</span></span>")
     components.html(
-        f"""
-        <div id="money-badge" style="
-            position: fixed; right: 18px; bottom: 18px; z-index: 2147483647;
-            background: {bg}; color: white; padding: 10px 14px 10px 12px;
-            border-radius: 999px; font: 600 14px/1.2 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto;
-            box-shadow: 0 10px 28px rgba(0,0,0,0.55); opacity: 0; transform: translateY(10px);
-            transition: all .25s ease; display: inline-flex; align-items: center; gap: 8px;
-            -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
-        ">
-          <span style="font-size:18px">{emoji}</span>
-          <span>{text}</span>
-          <button id="money-close" aria-label="Close" style="
-            border:none; background:transparent; color:rgba(255,255,255,0.9);
-            margin-left:8px; cursor:pointer; font-size:16px; line-height:1; padding:0;
-          ">&times;</button>
-        </div>
-        <script>
-          (function() {{
-            const badge = document.getElementById('money-badge');
-            const closeBtn = document.getElementById('money-close');
-            function padForMobile(){{
-              const isMobile = window.innerWidth < 500;
-              badge.style.right = isMobile ? '12px' : '18px';
-              badge.style.bottom = isMobile ? '12px' : '18px';
-            }}
-            padForMobile(); window.addEventListener('resize', padForMobile);
-
-            // animate in
-            requestAnimationFrame(() => {{
-              badge.style.opacity = 1;
-              badge.style.transform = 'translateY(0)';
-            }});
-
-            let hideTimer = null;
-            let removeTimer = null;
-
-            function startTimers() {{
-              hideTimer = setTimeout(() => {{
-                badge.style.opacity = 0;
-                badge.style.transform = 'translateY(10px)';
-                removeTimer = setTimeout(() => {{
-                  badge.remove && badge.remove();
-                }}, 500);
-              }}, {duration});
-            }}
-
-            function clearTimers() {{
-              if (hideTimer) clearTimeout(hideTimer);
-              if (removeTimer) clearTimeout(removeTimer);
-              hideTimer = null; removeTimer = null;
-            }}
-
-            // Pause on hover, resume on leave
-            badge.addEventListener('mouseenter', clearTimers);
-            badge.addEventListener('mouseleave', () => {{
-              clearTimers();
-              startTimers();
-            }});
-
-            // Manual close
-            closeBtn.addEventListener('click', () => {{
-              clearTimers();
-              badge.style.opacity = 0;
-              badge.style.transform = 'translateY(10px)';
-              setTimeout(() => badge.remove && badge.remove(), 300);
-            }});
-
-            startTimers();
-          }})();
-        </script>
-        """,
-        height=80,
-    )
-    # Clear state AFTER rendering so it won't show again on the next rerun.
-    st.session_state["_flash_money"] = None
-
-# -------------------------
-# Glowy usage bar (green → amber → red)
-# -------------------------
-def usage_bar(used: float, total: float, label: str = "Room used"):
-    pct = 0.0 if total <= 0 else min(100.0, max(0.0, used / total * 100.0))
-    # Colors: 0-60 green, 60-85 amber, 85-100 red with glow
-    if pct < 60:
-        color, glow = "#16a34a", "none"         # green
-    elif pct < 85:
-        color, glow = "#f59e0b", "none"         # amber
-    else:
-        color, glow = "#ef4444", "0 0 18px rgba(239,68,68,0.45)"  # red + glow
-
-    components.html(
-        f"""
-        <div style="margin: 6px 0 16px 0;">
-          <div style="display:flex; justify-content:space-between; font: 500 13px/1.3 ui-sans-serif,system-ui; color:#CBD5E1;">
-            <span>{label}</span>
-            <span>{pct:.1f}%</span>
-          </div>
-          <div class="usage-track" style="height:12px; background:#1f2937; border-radius:999px; overflow:hidden;">
-            <div style="height:100%; width:{pct}%; background:{color};
-                        box-shadow:{glow}; transition: width .25s ease; border-radius:999px;"></div>
-          </div>
-        </div>
-        """,
-        height=40
+        "<div class='tfsa-limits-row'>" + "".join(chips) + "</div>",
+        height=0,
     )
 
-# =========================
-# --------- UI ------------
-# =========================
+render_global_css()
+
+# =============================================================================
+# Header
+# =============================================================================
 st.title("TFSA Contribution Tracker")
-show_money_badge_if_any()  # keep this right after the title
 
-current_year = datetime.now().year
-
-# --- Estimator Header / Explainer ---
+# =============================================================================
+# Help accordion (now with clean chips)
+# =============================================================================
 with st.expander("ℹ️ How TFSA contribution room works", expanded=False):
     st.markdown(
         """
@@ -285,13 +230,16 @@ with st.expander("ℹ️ How TFSA contribution room works", expanded=False):
 - **Withdrawals** do **not** give room back until **January 1 of the next year**.
 - CRA is the source of truth. This app is an educational helper; confirm with CRA if you’re unsure.
 
-**Annual limits by year (selected):**
-2009 $5,000 • 2013 $5,500 • 2015 $10,000 • 2019 $6,000 • 2023 $6,500 • 2024 $7,000 • 2025 $7,000
+**Annual limits (highlights):**
         """
     )
+    render_limits_chips()
 
-# --- Estimator / Input ---
+# =============================================================================
+# Estimator
+# =============================================================================
 st.subheader("📅 Contribution Room Estimator")
+current_year = datetime.now().year
 
 colA, colB = st.columns([1, 1])
 with colA:
@@ -304,12 +252,10 @@ with colB:
     )
 
 if st.session_state.ever_contributed == "No":
-    # If never contributed, your available room = sum of all years from start to current
     estimated_room_total = total_room_from_inception(dob, current_year)
     carryover_prior = estimated_room_total - current_year_limit(current_year)
     st.success(f"Estimated available room (all-time if you've truly never contributed): **${estimated_room_total:,.0f}**")
 else:
-    # If you *have* contributed, we need a manual carryover (until we add import)
     st.session_state.carryover_manual = st.number_input(
         "Enter your unused TFSA room carried into this year (best estimate):",
         min_value=0.0, step=500.0, value=float(st.session_state.carryover_manual)
@@ -318,24 +264,40 @@ else:
     carryover_prior = st.session_state.carryover_manual
     st.info(f"Estimated total room available **this year** (carryover + {current_year} limit): **${estimated_room_total:,.0f}**")
 
-# --- Top Metrics + Usage bar ---
 df_all = df_from_txns(st.session_state.transactions)
 deposits_ytd = current_year_deposits(df_all, current_year)
 room_used_pct = (deposits_ytd / estimated_room_total * 100.0) if estimated_room_total > 0 else 0.0
 room_left = max(0.0, estimated_room_total - deposits_ytd)
 
-usage_bar(deposits_ytd, estimated_room_total, label="Contribution room used")
+bar_color = "green"
+if room_used_pct >= 60: bar_color = "amber"
+if room_used_pct >= 90: bar_color = "red"
 
-metric1, metric2, metric3 = st.columns(3)
-metric1.metric("This year's limit", f"${current_year_limit(current_year):,.0f}")
-metric2.metric("Carryover into this year", f"${carryover_prior:,.0f}")
-metric3.metric("Room left (est.)", f"${room_left:,.0f}")
+components.html(
+    f"""
+    <div class="tfsa-bar-wrap">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <div style="font-weight:600;opacity:.95;">Contribution room used</div>
+        <div style="font-weight:700;opacity:.95;">{room_used_pct:.1f}%</div>
+      </div>
+      <div class="tfsa-bar-track">
+        <div class="tfsa-bar-fill {bar_color}" style="width:{min(100,room_used_pct):.2f}%"></div>
+        <div class="tfsa-bar-label">${room_left:,.0f} room left</div>
+      </div>
+    </div>
+    """,
+    height=64,
+)
 
-# =========================
-# --- Add a Transaction ---
-# =========================
+m1, m2, m3 = st.columns(3)
+m1.metric("This year's limit", f"${current_year_limit(current_year):,.0f}")
+m2.metric("Carryover into this year", f"${carryover_prior:,.0f}")
+m3.metric("Room left (est.)", f"${room_left:,.0f}")
+
+# =============================================================================
+# Add transaction
+# =============================================================================
 st.subheader("➕ Add a Transaction")
-
 with st.form("txn_form", clear_on_submit=False):
     c1, c2 = st.columns([1, 1])
     with c1:
@@ -346,70 +308,72 @@ with st.form("txn_form", clear_on_submit=False):
             index=(0 if st.session_state.type_input == "deposit" else 1),
             horizontal=True
         )
-
     t_amount = st.number_input("Amount", min_value=0.0, step=100.0, value=float(st.session_state.amount_input))
     submitted = st.form_submit_button("Add", type="primary", use_container_width=True)
 
     if submitted:
-        # Recompute df after any prior changes
         df_all = df_from_txns(st.session_state.transactions)
-
-        # VALIDATIONS
         if t_amount <= 0:
-            st.error("Please enter an amount greater than $0.")
+            push_notification("warn", "Please enter an amount greater than $0.")
         else:
             if st.session_state.type_input == "deposit":
-                # Deposit cannot exceed remaining contribution room for the deposit's calendar year
                 deposit_year = t_date.year
                 deposits_that_year = current_year_deposits(df_all, deposit_year)
                 year_limit = current_year_limit(deposit_year)
-
                 if deposit_year == current_year:
-                    # Current-year allowed room = carryover_prior + year_limit - deposits_ytd (conservative)
-                    allowed_room = max(0.0, carryover_prior + year_limit - deposits_that_year)
+                    allowed_room = max(0.0, (st.session_state.carryover_manual if st.session_state.ever_contributed == "Yes" else (estimated_room_total - current_year_limit(current_year))) + year_limit - deposits_that_year)
                 else:
-                    # For past years we don't model carryover; use annual limit (conservative)
                     allowed_room = max(0.0, year_limit - deposits_that_year)
-
                 if t_amount > allowed_room:
-                    st.error(f"❌ Deposit exceeds available contribution room for {deposit_year}. Available: ${allowed_room:,.0f}.")
+                    push_notification("err", f"Deposit exceeds available room for {deposit_year}. Available: ${allowed_room:,.0f}.")
                 else:
                     st.session_state.transactions.append({
                         "id": st.session_state.next_id,
                         "date": t_date.strftime("%Y-%m-%d"),
                         "type": "deposit",
-                        "amount": float(t_amount)
+                        "amount": float(t_amount),
                     })
                     st.session_state.next_id += 1
-                    st.session_state.amount_input = 0.0  # reset input
-                    st.toast("💵 Deposit added", icon="✅")
-                    trigger_money_badge("deposit", "Deposit added")
+                    st.session_state.amount_input = 0.0
+                    push_notification("deposit", "Deposit added")
+                    emoji_fx("deposit")
             else:
-                # Withdrawal cannot exceed balance (lifetime deposits - withdrawals)
                 bal = lifetime_balance(df_all)
                 if t_amount > bal:
-                    st.error(f"❌ Withdrawal exceeds available balance. Current balance: ${bal:,.0f}.")
+                    push_notification("err", f"Withdrawal exceeds available balance. Current balance: ${bal:,.0f}.")
                 else:
                     st.session_state.transactions.append({
                         "id": st.session_state.next_id,
                         "date": t_date.strftime("%Y-%m-%d"),
                         "type": "withdrawal",
-                        "amount": float(t_amount)
+                        "amount": float(t_amount),
                     })
                     st.session_state.next_id += 1
-                    st.session_state.amount_input = 0.0  # reset input
-                    st.toast("🔻 Withdrawal added", icon="❗")
-                    trigger_money_badge("withdrawal", "Withdrawal added")
+                    st.session_state.amount_input = 0.0
+                    push_notification("withdrawal", "Withdrawal added")
+                    emoji_fx("withdrawal")
 
-# =========================
-# --- Logged Transactions (collapsible under Add) ---
-# =========================
-with st.expander(f"🧾 Logged transactions ({len(st.session_state.transactions)})", expanded=False):
+# notifications & fx
+render_notifications()
+render_fx()
+
+# =============================================================================
+# Logged transactions (bomb icon)
+# =============================================================================
+row = st.container()
+with row:
+    c_left, c_right = st.columns([0.8, 0.2])
+    with c_left:
+        open_exp = st.expander(f"🧾 Logged transactions ({len(st.session_state.transactions)})", expanded=False)
+    with c_right:
+        if st.button("💣", help="Clear all transactions", use_container_width=True):
+            st.session_state.confirming_clear = True
+
+with open_exp:
     df_all = df_from_txns(st.session_state.transactions)
     if df_all.empty:
         st.info("No transactions yet. Add your first deposit to get started.")
     else:
-        # Nice compact list with per-row delete
         df_log = df_all.sort_values(by="date", ascending=False).copy()
         for _, row in df_log.iterrows():
             line = st.container(border=True)
@@ -417,92 +381,86 @@ with st.expander(f"🧾 Logged transactions ({len(st.session_state.transactions)
                 c1, c2, c3, c4 = st.columns([1.2, 1, 1, 0.5])
                 c1.write(f"**{row['date'].strftime('%Y-%m-%d')}**")
                 if row["type"] == "deposit":
-                    c2.markdown(f"<span style='color:#22c55e;'>💵 Deposit</span>", unsafe_allow_html=True)
+                    c2.markdown("<span style='color:#22c55e;'>💵 Deposit</span>", unsafe_allow_html=True)
                 else:
-                    c2.markdown(f"<span style='color:#ef4444;'>🔻 Withdrawal</span>", unsafe_allow_html=True)
+                    c2.markdown("<span style='color:#ef4444;'>🔻 Withdrawal</span>", unsafe_allow_html=True)
                 c3.write(f"${row['amount']:,.2f}")
-                # Delete button for this row
                 if c4.button("✖️", key=f"del_{int(row['id'])}", help="Delete this transaction"):
-                    st.session_state.transactions = [
-                        tx for tx in st.session_state.transactions if tx["id"] != int(row["id"])
-                    ]
-                    st.rerun()
+                    st.session_state.transactions = [tx for tx in st.session_state.transactions if tx["id"] != int(row["id"])]
+                    push_notification("warn", "Transaction deleted")
+                    st.experimental_rerun()
 
-        # Clear-all with confirmation
-        st.write("---")
-        if not st.session_state.confirming_clear:
-            if st.button("💣 Clear all transactions", type="secondary"):
-                st.session_state.confirming_clear = True
-                st.rerun()
-        else:
-            st.warning("Are you sure you want to delete **all** transactions? This cannot be undone.")
-            c_yes, c_no = st.columns([1, 1])
-            with c_yes:
+        if st.session_state.confirming_clear:
+            warn = st.warning("Delete **all** transactions? This cannot be undone.")
+            cc1, cc2 = st.columns([1, 1])
+            with cc1:
                 if st.button("Yes, delete all", type="primary"):
                     st.session_state.transactions = []
                     st.session_state.confirming_clear = False
-                    st.toast("All transactions cleared", icon="⚠️")
-                    st.rerun()
-            with c_no:
+                    push_notification("warn", "All transactions cleared")
+                    st.experimental_rerun()
+            with cc2:
                 if st.button("No, keep them"):
                     st.session_state.confirming_clear = False
-                    st.rerun()
+                    st.experimental_rerun()
 
-# =========================
-# ------- Analytics -------
-# =========================
-st.subheader("📊 Monthly Summary & Chart")
-
-df_all = df_from_txns(st.session_state.transactions)
-if df_all.empty:
-    st.info("No data yet. Add a transaction to see summary and charts.")
-else:
-    # Current-year monthly summary (guarantee both columns and all months)
-    df_curr = df_all[df_all["year"] == current_year].copy()
-
-    month_index = pd.period_range(start=f"{current_year}-01", end=f"{current_year}-12", freq="M").astype(str)
-    monthly = (
-        df_curr.groupby(["month", "type"])["amount"]
-        .sum()
-        .unstack()
-        .reindex(columns=["deposit", "withdrawal"], fill_value=0.0)  # ensure both columns exist
-        .reindex(index=month_index, fill_value=0.0)                   # ensure all months exist
-        .fillna(0.0)
-        .reset_index()
-        .rename(columns={"index": "month"})
-    )
-
-    # Table
-    st.dataframe(
-        monthly.style.format({
-            "deposit": "${:,.2f}",
-            "withdrawal": "${:,.2f}",
-        }),
-        use_container_width=True
-    )
-
-    # Chart (Altair) with fixed colors: deposit=green, withdrawal=red
-    melted = monthly.melt(id_vars=["month"], value_vars=["deposit", "withdrawal"], var_name="type", value_name="amount")
-    bar = (
-        alt.Chart(melted)
-        .mark_bar()
-        .encode(
-            x=alt.X("month:N", title="Month", sort=month_index.tolist()),
-            y=alt.Y("amount:Q", title="Amount ($)"),
-            color=alt.Color(
-                "type:N", title="",
-                scale=alt.Scale(domain=["deposit", "withdrawal"], range=["#16a34a", "#ef4444"])
-            ),
-            tooltip=["month:N", "type:N", alt.Tooltip("amount:Q", title="Amount", format="$.2f")]
+# =============================================================================
+# Analytics — collapsible
+# =============================================================================
+st.subheader("📊 Monthly Summary")
+with st.expander("Show charts & table", expanded=False):
+    df_all = df_from_txns(st.session_state.transactions)
+    if df_all.empty:
+        st.info("No data yet. Add a transaction to see summary and charts.")
+    else:
+        df_curr = df_all[df_all["year"] == current_year].copy()
+        monthly = (
+            df_curr.groupby(["month", "type"])["amount"]
+            .sum()
+            .unstack()
+            .reindex(columns=["deposit", "withdrawal"], fill_value=0.0)
+            .fillna(0.0)
+            .reset_index()
         )
-        .properties(height=260, width="container")
-    )
-    st.altair_chart(bar, use_container_width=True)
 
-# (Optional) Preferences slider for how long the badge stays visible
-with st.sidebar.expander("⚙️ Preferences", expanded=False):
-    secs = st.slider(
-        "Money badge duration (seconds)", 2, 12,
-        int(st.session_state.get("_flash_duration_ms", 6000) / 1000)
-    )
-    st.session_state["_flash_duration_ms"] = int(secs * 1000)
+        if not monthly.empty:
+            melted = monthly.melt(id_vars="month", value_vars=["deposit", "withdrawal"], var_name="kind", value_name="amount")
+            color_scale = alt.Scale(domain=["deposit", "withdrawal"], range=["#22c55e", "#ef4444"])
+            chart = (
+                alt.Chart(melted)
+                .mark_bar()
+                .encode(
+                    x=alt.X("month:N", sort=None, title="Month"),
+                    y=alt.Y("amount:Q", title="Amount ($)"),
+                    color=alt.Color("kind:N", scale=color_scale, legend=alt.Legend(title="Type", orient="top")),
+                    tooltip=["month", "kind", alt.Tooltip("amount:Q", format="$.2f")],
+                )
+                .properties(height=260)
+            )
+            st.altair_chart(chart, use_container_width=True)
+        else:
+            st.info("No current-year transactions for charting yet.")
+
+        if not monthly.empty:
+            total_room_this_year = (
+                (st.session_state.carryover_manual + current_year_limit(current_year))
+                if st.session_state.ever_contributed == "Yes"
+                else total_room_from_inception(dob, current_year) - total_room_from_inception(dob, current_year - 1)
+            )
+            monthly["net_contribution"] = monthly["deposit"]
+            monthly["cumulative_contribution"] = monthly["deposit"].cumsum()
+            monthly["room_left"] = (total_room_this_year - monthly["cumulative_contribution"]).clip(lower=0.0)
+            st.dataframe(
+                monthly.style.format({
+                    "deposit": "${:,.2f}",
+                    "withdrawal": "${:,.2f}",
+                    "net_contribution": "${:,.2f}",
+                    "cumulative_contribution": "${:,.2f}",
+                    "room_left": "${:,.2f}",
+                }),
+                use_container_width=True,
+            )
+
+# final notifications pass
+render_notifications()
+render_fx()
