@@ -21,7 +21,8 @@ def init_state():
         "carryover_manual": 0.0,    # manual carryover when ever_contributed == "Yes"
         "amount_input": 0.0,        # form inputs (helps reset)
         "type_input": "deposit",
-        "_flash_money": None,       # for the floating badge
+        "_flash_money": None,       # for the floating badge payload
+        "_flash_duration_ms": 6000, # how long the badge stays visible
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -57,23 +58,31 @@ alt.themes.register('tfsa_dark', _alt_dark)
 alt.themes.enable('tfsa_dark')
 
 # -------------------------
-# CSS polish / spacing (dark-mode tuned)
+# CSS polish / spacing (dark-mode tuned, tighter title-to-expander gap)
 # -------------------------
 st.markdown("""
 <style>
-/* More breathing room so the H1 never clips */
-.block-container { padding-top: 2.6rem !important; padding-bottom: 2.25rem; }
-.block-container h1:first-child { margin-top: .25rem !important; }
+/* Reduce top padding so title sits higher (still not clipped under toolbar) */
+.block-container { padding-top: 1.6rem !important; padding-bottom: 2.25rem; }
+.block-container h1:first-child { margin-top: .2rem !important; margin-bottom: .5rem !important; }
+
+/* Tighten the gap before the first expander after the title */
+.block-container h1 + div[data-testid="stExpander"] {
+    margin-top: 0.25rem !important;
+}
 
 /* Dark-mode friendly neutrals */
 :root, body { color-scheme: dark; }
 .limits-inline { white-space: nowrap; }
 
-/* Metrics label tint */
+/* Metric label tint */
 [data-testid="stMetricLabel"] { color: #9CA3AF; }
 
 /* Usage bar track (darker gray on dark bg) */
 .usage-track { background:#1f2937 !important; }
+
+/* Reduce vertical gaps a bit globally */
+section.main > div.block-container > div { margin-top: .25rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -122,16 +131,23 @@ def lifetime_balance(df: pd.DataFrame) -> float:
     return deposits - withdrawals
 
 # -------------------------
-# Floating "money" badge (Option B)
+# Floating "money" badge (Option B) — no extra rerun to avoid jump
 # -------------------------
-def trigger_money_badge(kind: str, text: str):
+def trigger_money_badge(kind: str, text: str, duration_ms: int | None = None):
     """kind='deposit' or 'withdrawal'"""
-    st.session_state["_flash_money"] = {"kind": kind, "text": text}
-    st.rerun()
+    st.session_state["_flash_money"] = {
+        "kind": kind,
+        "text": text,
+        "duration": int(duration_ms or st.session_state.get("_flash_duration_ms", 6000)),
+    }
+    # Do NOT st.rerun() — form submit already reruns once.
 
 def show_money_badge_if_any():
     """
-    Renders a floating badge that's fixed to the viewport of this small iframe.
+    Renders a floating badge fixed to the viewport.
+    - Visible longer (default 6s)
+    - Pauses fade-out on hover
+    - Has a manual dismiss (×)
     Keep this CALL right after st.title(...) so it's always in view.
     """
     data = st.session_state.get("_flash_money")
@@ -140,8 +156,8 @@ def show_money_badge_if_any():
 
     kind = data.get("kind", "deposit")
     text = data.get("text", "Updated")
+    duration = int(data.get("duration", 6000))
 
-    # vivid colors that read well on dark backgrounds
     bg = "#16a34a" if kind == "deposit" else "#ef4444"  # green / red
     emoji = "💵" if kind == "deposit" else "🔻"
 
@@ -149,31 +165,77 @@ def show_money_badge_if_any():
         f"""
         <div id="money-badge" style="
             position: fixed; right: 18px; bottom: 18px; z-index: 2147483647;
-            background: {bg}; color: white; padding: 10px 14px;
+            background: {bg}; color: white; padding: 10px 14px 10px 12px;
             border-radius: 999px; font: 600 14px/1.2 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto;
             box-shadow: 0 10px 28px rgba(0,0,0,0.55); opacity: 0; transform: translateY(10px);
             transition: all .25s ease; display: inline-flex; align-items: center; gap: 8px;
             -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
         ">
-          <span style="font-size:18px">{emoji}</span><span>{text}</span>
+          <span style="font-size:18px">{emoji}</span>
+          <span>{text}</span>
+          <button id="money-close" aria-label="Close" style="
+            border:none; background:transparent; color:rgba(255,255,255,0.9);
+            margin-left:8px; cursor:pointer; font-size:16px; line-height:1; padding:0;
+          ">&times;</button>
         </div>
         <script>
-          const badge = document.getElementById('money-badge');
-          function padForMobile(){{
-            const isMobile = window.innerWidth < 500;
-            badge.style.right = isMobile ? '12px' : '18px';
-            badge.style.bottom = isMobile ? '12px' : '18px';
-          }}
-          padForMobile(); window.addEventListener('resize', padForMobile);
-          // animate in
-          setTimeout(()=>{{ badge.style.opacity=1; badge.style.transform='translateY(0)'; }}, 10);
-          // hang then fade
-          setTimeout(()=>{{ badge.style.opacity=0; badge.style.transform='translateY(10px)'; }}, 2400);
-          setTimeout(()=>{{ badge.remove && badge.remove(); }}, 2800);
+          (function() {{
+            const badge = document.getElementById('money-badge');
+            const closeBtn = document.getElementById('money-close');
+            function padForMobile(){{
+              const isMobile = window.innerWidth < 500;
+              badge.style.right = isMobile ? '12px' : '18px';
+              badge.style.bottom = isMobile ? '12px' : '18px';
+            }}
+            padForMobile(); window.addEventListener('resize', padForMobile);
+
+            // animate in
+            requestAnimationFrame(() => {{
+              badge.style.opacity = 1;
+              badge.style.transform = 'translateY(0)';
+            }});
+
+            let hideTimer = null;
+            let removeTimer = null;
+
+            function startTimers() {{
+              hideTimer = setTimeout(() => {{
+                badge.style.opacity = 0;
+                badge.style.transform = 'translateY(10px)';
+                removeTimer = setTimeout(() => {{
+                  badge.remove && badge.remove();
+                }}, 500);
+              }}, {duration});
+            }}
+
+            function clearTimers() {{
+              if (hideTimer) clearTimeout(hideTimer);
+              if (removeTimer) clearTimeout(removeTimer);
+              hideTimer = null; removeTimer = null;
+            }}
+
+            // Pause on hover, resume on leave
+            badge.addEventListener('mouseenter', clearTimers);
+            badge.addEventListener('mouseleave', () => {{
+              clearTimers();
+              startTimers();
+            }});
+
+            // Manual close
+            closeBtn.addEventListener('click', () => {{
+              clearTimers();
+              badge.style.opacity = 0;
+              badge.style.transform = 'translateY(10px)';
+              setTimeout(() => badge.remove && badge.remove(), 300);
+            }});
+
+            startTimers();
+          }})();
         </script>
         """,
-        height=80,  # non-zero so the iframe is rendered
+        height=80,
     )
+    # Clear state AFTER rendering so it won't show again on the next rerun.
     st.session_state["_flash_money"] = None
 
 # -------------------------
@@ -235,7 +297,11 @@ colA, colB = st.columns([1, 1])
 with colA:
     dob = st.date_input("Your date of birth", value=date(1990, 1, 1), min_value=date(1900, 1, 1), max_value=date.today())
 with colB:
-    st.session_state.ever_contributed = st.radio("Have you ever contributed to a TFSA before?", ["No", "Yes"], index=(0 if st.session_state.ever_contributed == "No" else 1))
+    st.session_state.ever_contributed = st.radio(
+        "Have you ever contributed to a TFSA before?",
+        ["No", "Yes"],
+        index=(0 if st.session_state.ever_contributed == "No" else 1),
+    )
 
 if st.session_state.ever_contributed == "No":
     # If never contributed, your available room = sum of all years from start to current
@@ -391,10 +457,9 @@ df_all = df_from_txns(st.session_state.transactions)
 if df_all.empty:
     st.info("No data yet. Add a transaction to see summary and charts.")
 else:
-    # Current-year monthly summary (guarantee both columns exist)
+    # Current-year monthly summary (guarantee both columns and all months)
     df_curr = df_all[df_all["year"] == current_year].copy()
 
-    # Build month grid Jan..Dec of current year to keep the X-axis stable
     month_index = pd.period_range(start=f"{current_year}-01", end=f"{current_year}-12", freq="M").astype(str)
     monthly = (
         df_curr.groupby(["month", "type"])["amount"]
@@ -425,13 +490,19 @@ else:
             x=alt.X("month:N", title="Month", sort=month_index.tolist()),
             y=alt.Y("amount:Q", title="Amount ($)"),
             color=alt.Color(
-                "type:N", title="Type",
+                "type:N", title="",
                 scale=alt.Scale(domain=["deposit", "withdrawal"], range=["#16a34a", "#ef4444"])
             ),
             tooltip=["month:N", "type:N", alt.Tooltip("amount:Q", title="Amount", format="$.2f")]
         )
-        .properties(height=260, use_container_width=True)
+        .properties(height=260, width="container")
     )
     st.altair_chart(bar, use_container_width=True)
 
-# End of file
+# (Optional) Preferences slider for how long the badge stays visible
+with st.sidebar.expander("⚙️ Preferences", expanded=False):
+    secs = st.slider(
+        "Money badge duration (seconds)", 2, 12,
+        int(st.session_state.get("_flash_duration_ms", 6000) / 1000)
+    )
+    st.session_state["_flash_duration_ms"] = int(secs * 1000)
