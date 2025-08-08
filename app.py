@@ -13,7 +13,8 @@ if 'amount_input' not in st.session_state:
 # Function to reset transactions when key info changes
 def reset_transactions():
     st.session_state.transactions.clear()
-    st.session_state.amount_input = 0.0
+    if 'amount_input' in st.session_state:
+        st.session_state.amount_input = 0.0
 
 # ----------------------------
 # Settings
@@ -94,7 +95,8 @@ with st.form("transaction_form"):
                 st.toast("Deposit added!", icon="💸")
             elif t_type == "withdrawal":
                 st.toast("Withdrawal added!", icon="🔻")
-            st.session_state.amount_input = 0.0
+            if 'amount_input' in st.session_state:
+                st.session_state.amount_input = 0.0
 
 # ----------------------------
 # Display & Summary
