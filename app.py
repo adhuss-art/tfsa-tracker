@@ -28,7 +28,11 @@ st.title("TFSA Monthly Tracker with Carryover Support")
 # TFSA Room Estimator
 # ----------------------------
 st.subheader("📅 Contribution Room Estimator")
-dob = st.date_input("Enter your date of birth:", value=datetime(1990, 1, 1), min_value=datetime(1900, 1, 1), max_value=datetime.today(), on_change=reset_transactions)
+col1, col2 = st.columns(2)
+with col1:
+    dob = st.date_input("Enter your date of birth:", value=datetime(1990, 1, 1), min_value=datetime(1900, 1, 1), max_value=datetime.today(), on_change=reset_transactions)
+with col2:
+    ever_contributed = st.radio("Have you ever contributed to a TFSA before?", ["Yes", "No"], on_change=reset_transactions)
 
 # Show year turned 18
 age_18_year = dob.year + 18
@@ -36,7 +40,6 @@ if age_18_year > current_year:
     st.error("❌ You are not eligible for a TFSA yet. You must be at least 18 years old.")
 else:
     st.info(f"You became TFSA-eligible in: {age_18_year}")
-ever_contributed = st.radio("Have you ever contributed to a TFSA before?", ["Yes", "No"], on_change=reset_transactions)
 
 tfsa_start_year = max(dob.year + 18, 2009)
 estimated_room = 0
@@ -50,7 +53,7 @@ limits_by_year = {
 if ever_contributed == "No" and age_18_year <= current_year:
     for year in range(tfsa_start_year, current_year + 1):
         estimated_room += limits_by_year.get(year, 0)
-    st.success(f"✅ Your estimated available contribution room is: ${estimated_room:,.2f}")
+    st.metric(label="Estimated Contribution Room", value=f"${estimated_room:,.2f}")
     with st.expander("ℹ️ Why is this your estimated room?", expanded=True):
         st.markdown("""
         This estimate is based on your date of birth and assumes you've **never contributed** to a TFSA.
@@ -61,6 +64,7 @@ if ever_contributed == "No" and age_18_year <= current_year:
         """)
 else:
     estimated_room = st.number_input("Enter your unused TFSA room (manually, if known):", min_value=0, step=500, value=0)
+    st.metric(label="Manual Contribution Room", value=f"${estimated_room:,.2f}")
 
 # Future contribution room preview
 if ever_contributed == "No" and age_18_year <= current_year:
@@ -80,9 +84,13 @@ total_contribution_room = estimated_room
 
 st.subheader("➕ Add a Transaction")
 with st.form("transaction_form"):
-    t_date = st.date_input("Transaction Date", value=datetime.today(), min_value=datetime(2009, 1, 1), max_value=datetime(current_year, 12, 31))
-    t_type = st.radio("Type", ["deposit", "withdrawal"], horizontal=True)
-    t_amount = st.number_input("Amount", min_value=0.0, step=100.0, key='amount_input')
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        t_date = st.date_input("Transaction Date", value=datetime.today(), min_value=datetime(2009, 1, 1), max_value=datetime(current_year, 12, 31))
+    with col2:
+        t_type = st.radio("Type", ["deposit", "withdrawal"], horizontal=True)
+    with col3:
+        t_amount = st.number_input("Amount", min_value=0.0, step=100.0, key='amount_input')
     submitted = st.form_submit_button("Add Transaction")
 
     if submitted and t_amount > 0:
@@ -112,14 +120,12 @@ if st.session_state.transactions:
     total_deposits = monthly_totals.get("deposit", 0)
     contribution_percent = min(100, int((total_deposits / total_contribution_room) * 100))
     
-    # Dynamic progress bar colors
-    if contribution_percent < 50:
-        bar_color = '#00c853'
-    elif contribution_percent < 90:
-        bar_color = '#ffab00'
-    else:
-        bar_color = '#d50000'
-    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric(label="Total Deposits", value=f"${total_deposits:,.2f}")
+    with col2:
+        st.metric(label="Remaining Room", value=f"${total_contribution_room - total_deposits:,.2f}")
+
     st.progress(contribution_percent / 100)
     st.markdown(f"<strong>{contribution_percent}% of your contribution room used</strong>", unsafe_allow_html=True)
     remaining_room_val = total_contribution_room - total_deposits
