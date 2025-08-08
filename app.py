@@ -131,6 +131,13 @@ if st.session_state.transactions:
 
     st.line_chart(df.groupby(df['date'].dt.to_period('M')).sum(numeric_only=True).to_timestamp())
 
-    # Transaction list
-    st.subheader("🧾 Logged Transactions")
-    st.dataframe(df.sort_values(by="date", ascending=False))
+    # Transaction controls
+    st.subheader("📋 Transaction Controls")
+    col_a, col_b = st.columns(2)
+    with col_a:
+        if st.button("💣  Clear All Transactions"):
+            st.session_state.transactions.clear()
+            st.success("All transactions cleared.")
+    with col_b:
+        if st.button("🧾 View Logged Transactions"):
+            st.dataframe(df.sort_values(by="date", ascending=False))
