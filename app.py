@@ -120,7 +120,7 @@ if st.session_state.transactions:
     else:
         bar_color = '#d50000'
     
-    st.markdown(f"<div style='margin-top: 10px; background-color: #333; border-radius: 4px; overflow: hidden;'>\n      <div style='width:{contribution_percent}%; background-color:{bar_color}; height:20px;'></div>\n    </div>", unsafe_allow_html=True)
+    st.progress(contribution_percent / 100)
     st.markdown(f"<strong>{contribution_percent}% of your contribution room used</strong>", unsafe_allow_html=True)
     remaining_room_val = total_contribution_room - total_deposits
     st.markdown(f"<div style='color:{'#2e7d32' if contribution_percent < 90 else '#d32f2f'}; font-weight:bold;'>💡 You have ${remaining_room_val:,.2f} in room remaining.</div>", unsafe_allow_html=True)
