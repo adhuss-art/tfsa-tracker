@@ -13,10 +13,7 @@ if 'amount_input' not in st.session_state:
 # Function to reset transactions when key info changes
 def reset_transactions():
     st.session_state.transactions.clear()
-    try:
-        st.session_state['amount_input'] = 0.0
-    except st.errors.StreamlitAPIException:
-        pass
+    st.session_state.amount_input = 0.0
 
 # ----------------------------
 # Settings
@@ -90,25 +87,26 @@ with st.form("transaction_form"):
     with col2:
         t_type = st.radio("Type", ["deposit", "withdrawal"], horizontal=True)
     with col3:
-        t_amount = st.number_input("Amount", min_value=0.0, step=100.0, key='amount_input')
+        t_amount = st.number_input("Amount", min_value=0.0, step=100.0, value=st.session_state.amount_input, key='amount_input')
     submitted = st.form_submit_button("Add Transaction")
 
     if submitted and t_amount > 0:
-        used_room = sum(t['amount'] for t in st.session_state.transactions if t['type'] == 'deposit')
-        remaining_room = total_contribution_room - used_room
+        total_deposits_made = sum(t['amount'] for t in st.session_state.transactions if t['type'] == 'deposit')
+        total_withdrawals_made = sum(t['amount'] for t in st.session_state.transactions if t['type'] == 'withdrawal')
+        remaining_room = total_contribution_room - total_deposits_made
+        available_withdraw_balance = total_deposits_made - total_withdrawals_made
 
         if t_type == 'deposit' and t_amount > remaining_room:
             st.error(f"❌ You cannot deposit more than your available contribution room (${remaining_room:,.2f}).")
+        elif t_type == 'withdrawal' and t_amount > available_withdraw_balance:
+            st.error(f"❌ You cannot withdraw more than your current deposited balance (${available_withdraw_balance:,.2f}).")
         else:
             st.session_state.transactions.append({"date": t_date.strftime("%Y-%m-%d"), "type": t_type, "amount": t_amount})
             if t_type == "deposit":
                 st.toast("Deposit added!", icon="💸")
             elif t_type == "withdrawal":
                 st.toast("Withdrawal added!", icon="🔻")
-            try:
-                st.session_state['amount_input'] = 0.0
-            except st.errors.StreamlitAPIException:
-                pass
+            st.session_state.amount_input = 0.0
 
 # ----------------------------
 # Display & Summary
@@ -130,3 +128,9 @@ if st.session_state.transactions:
     st.markdown(f"<strong>{contribution_percent}% of your contribution room used</strong>", unsafe_allow_html=True)
     remaining_room_val = total_contribution_room - total_deposits
     st.markdown(f"<div style='color:{'#2e7d32' if contribution_percent < 90 else '#d32f2f'}; font-weight:bold;'>💡 You have ${remaining_room_val:,.2f} in room remaining.</div>", unsafe_allow_html=True)
+
+    st.line_chart(df.groupby(df['date'].dt.to_period('M')).sum(numeric_only=True).to_timestamp())
+
+    # Transaction list
+    st.subheader("🧾 Logged Transactions")
+    st.dataframe(df.sort_values(by="date", ascending=False))
