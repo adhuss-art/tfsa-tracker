@@ -138,7 +138,7 @@ def trigger_burst(emoji: str, ms: int = 1050):
 st.title("TFSA Contribution Tracker")
 current_year = datetime.now().year
 
-# --- Explainer with highlights + full table ---
+# --- Explainer with highlights + full table (no index) ---
 with st.expander("ℹ️ How TFSA contribution room works", expanded=False):
     highlights = [
         (2009, 5000),
@@ -166,6 +166,7 @@ with st.expander("ℹ️ How TFSA contribution room works", expanded=False):
     st.markdown("**Full annual TFSA limits**")
     full_df = pd.DataFrame(list(LIMITS_BY_YEAR.items()), columns=["Year", "Limit ($)"])
     full_df["Limit ($)"] = full_df["Limit ($)"].apply(lambda x: f"${x:,}")
+    full_df = full_df.reset_index(drop=True)  # remove index column
     st.table(full_df)
 
 # --- Estimator ---
@@ -376,9 +377,4 @@ else:
         st.dataframe(
             monthly.style.format({
                 "deposit": "${:,.2f}",
-                "withdrawal": "${:,.2f}",
-                "net_contribution": "${:,.2f}",
-                "cumulative_contribution": "${:,.2f}",
-            }),
-            use_container_width=True
-        )
+                "
