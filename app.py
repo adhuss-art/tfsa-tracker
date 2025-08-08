@@ -373,8 +373,14 @@ else:
     ).properties(height=260)
 
     st.altair_chart(bar, use_container_width=True)
-    with st.expander("Show table", expanded=False):
+       with st.expander("Show table", expanded=False):
         st.dataframe(
             monthly.style.format({
                 "deposit": "${:,.2f}",
-                "
+                "withdrawal": "${:,.2f}",
+                "net_contribution": "${:,.2f}",
+                "cumulative_contribution": "${:,.2f}",
+            }),
+            use_container_width=True
+        )
+
